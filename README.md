@@ -42,6 +42,24 @@ HOST=0.0.0.0 PORT=3210 npm start
 npm test
 ```
 
+Healthcheck:
+
+```bash
+curl http://127.0.0.1:3210/api/health
+```
+
+## Docker
+
+```bash
+docker compose up -d --build
+```
+
+Compose запускает сервис `lh-sobes` и публикует его только на localhost сервера:
+
+```text
+127.0.0.1:3600 -> container:3000
+```
+
 ## Данные
 
 Рабочий файл `data/interviews.json` не коммитится. Его можно удалить для сброса локального состояния, после чего приложение создаст демо-данные заново.

@@ -42,6 +42,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/health") {
+      sendJson(res, { ok: true, service: "loft-hall-interviews-mvp", updatedAt: new Date().toISOString() });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/command") {
       const command = await readJson(req);
       const state = await loadState();

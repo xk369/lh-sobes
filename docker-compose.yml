@@ -1,0 +1,13 @@
+services:
+  lh-sobes:
+    build: .
+    container_name: lh-sobes
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3600:3000"
+    volumes:
+      - ./data:/app/data
