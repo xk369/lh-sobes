@@ -4,7 +4,7 @@ Target server: `151.244.243.164`
 Public URL: `https://sobes.151.244.243.164.sslip.io`  
 Server path: `/opt/lh-sobes`  
 Container: `lh-sobes`  
-Local proxy port: `127.0.0.1:3600`
+Local proxy port: `127.0.0.1:3700`
 
 ## Safety Rules
 
@@ -21,7 +21,7 @@ git clone https://github.com/xk369/lh-sobes.git lh-sobes
 cd /opt/lh-sobes
 mkdir -p data
 docker compose up -d --build
-curl -fsS http://127.0.0.1:3600/api/health
+curl -fsS http://127.0.0.1:3700/api/health
 ```
 
 Install nginx route:
@@ -46,5 +46,5 @@ curl -fsS https://sobes.151.244.243.164.sslip.io/api/health
 cd /opt/lh-sobes
 git pull --ff-only
 docker compose up -d --build
-curl -fsS http://127.0.0.1:3600/api/health
+curl -fsS http://127.0.0.1:3700/api/health
 ```

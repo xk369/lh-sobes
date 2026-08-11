@@ -57,7 +57,7 @@ docker compose up -d --build
 Compose запускает сервис `lh-sobes` и публикует его только на localhost сервера:
 
 ```text
-127.0.0.1:3600 -> container:3000
+127.0.0.1:3700 -> container:3000
 ```
 
 ## Данные

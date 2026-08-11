@@ -8,6 +8,6 @@ services:
       PORT: 3000
       NODE_ENV: production
     ports:
-      - "127.0.0.1:3600:3000"
+      - "127.0.0.1:3700:3000"
     volumes:
       - ./data:/app/data
