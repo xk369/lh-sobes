@@ -1,0 +1,6 @@
+data/interviews.json
+.DS_Store
+node_modules/
+.env
+.env.*
+npm-debug.log*

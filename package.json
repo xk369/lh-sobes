@@ -1,0 +1,19 @@
+{
+  "name": "loft-hall-interviews-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone MVP for LOFT HALL interview booking and recruiter journal.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xk369/lh-sobes.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  }
+}
