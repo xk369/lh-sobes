@@ -4,6 +4,10 @@ const LEGACY_ROUTE_FILE_ID = "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAm
 const LOFT_23_ROUTE_FILE_ID = "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E";
 const LOFT_4_ROUTE_FILE_ID = "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E";
 const LEGACY_BOOKING_TEXT = "Вы записаны на собеседование. Сохраните адрес и приходите за 10 минут до начала.";
+const LEGACY_BOOKING_PREFIXES = [
+  "Вы записаны на собеседование:",
+  "Ждем вас на собеседовании:"
+];
 const DEFAULT_BOOKING_TEXT = `РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ ДВУХ СТОЛИЦ!
 
 LOFT HALL – это комплекс из 7 особняков, более 30 event-пространств в самом центре Москвы. Обладатель премий: «Лучшая городская площадка для проведения свадьбы 2024», «Событие года», «Лучшая городская event-площадка 2023» и «Лучшая площадка России для проведения мероприятий 2025».
@@ -1065,7 +1069,8 @@ function defaultBookingText(venue = {}) {
 
 function normalizeBookingText(slot = {}, venue = {}) {
   const text = clean(slot.bookingText || slot.confirmationText);
-  if (!text || text === LEGACY_BOOKING_TEXT) return defaultBookingText(venue);
+  const isLegacyText = text === LEGACY_BOOKING_TEXT || LEGACY_BOOKING_PREFIXES.some((prefix) => text.startsWith(prefix));
+  if (!text || isLegacyText) return defaultBookingText(venue);
   return text;
 }
 

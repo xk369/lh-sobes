@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyInterviewCommand, createSeedState } from "../src/interview-state.js";
+import { applyInterviewCommand, createSeedState, deriveState } from "../src/interview-state.js";
 
 test("new interview date automatically notifies waitlist candidates", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
@@ -41,6 +41,17 @@ test("new interview date automatically notifies waitlist candidates", () => {
     (item) => item.candidateId === "cand-003" && item.type === "waitlist_new_slot"
   );
   assert.equal(notification.slotId, result.result.slotId);
+});
+
+test("legacy auto booking messages migrate to current candidate template", () => {
+  const state = createSeedState("2026-08-10T09:00:00.000Z");
+  state.slots[0].bookingText = "Ждем вас на собеседовании: LOFT #8. После подтверждения отправим дополнительные материалы.";
+  state.slots[1].bookingText = "Вход со стороны главной проходной.";
+
+  const derived = deriveState(state);
+
+  assert.match(derived.slots[0].bookingText, /РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ/);
+  assert.equal(derived.slots[1].bookingText, "Вход со стороны главной проходной.");
 });
 
 test("candidate can confirm, miss interview, and return to waitlist", () => {
