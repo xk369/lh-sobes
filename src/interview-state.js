@@ -292,7 +292,11 @@ export function applyInterviewCommand(input, command, options = {}) {
           message: slot
             ? `Собеседование ${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. Выберите: да, приду или нет, не смогу.`
             : "Подтвердите участие в собеседовании.",
-          slotId: candidate.interviewSlotId
+          slotId: candidate.interviewSlotId,
+          actions: [
+            confirmationAction(candidate.id, "yes"),
+            confirmationAction(candidate.id, "no")
+          ]
         });
       }
       appendEvent(state, "confirmation_requested", actor, now, {
@@ -306,6 +310,8 @@ export function applyInterviewCommand(input, command, options = {}) {
 
     case "candidate_confirm": {
       const candidate = requireCandidate(state, payload.candidateId);
+      const wasDeclined =
+        candidate.status === "declined_before_interview" || candidate.confirmationStatus === "declined";
       if (payload.decision === "yes") {
         candidate.status = "confirmed";
         candidate.candidateLayerStatus = "interview_confirmed";
@@ -317,9 +323,16 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.confirmationStatus = "declined";
         candidate.attendanceStatus = "declined_before";
         candidate.declinedAt = now;
+        if (!wasDeclined) {
+          appendNotification(state, candidate.id, "interview_declined_saved", now, {
+            title: "Отказ от собеседования сохранен",
+            message: "Мы сняли вас с этой даты. Если захотите вернуться, можно записаться на новую дату или перейти в ожидание следующего собеседования.",
+            slotId: candidate.interviewSlotId
+          });
+        }
       }
       touch(candidate, now);
-      appendEvent(state, "candidate_confirmation_answered", "candidate", now, {
+      appendEvent(state, "candidate_confirmation_answered", actor, now, {
         candidateId: candidate.id,
         decision: payload.decision
       });
@@ -349,7 +362,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.candidateLayerStatus = "interview_no_show";
         appendNotification(state, candidate.id, "no_show_followup", now, {
           title: "Вы не пришли на собеседование",
-          message: "Вы можете записаться на следующую дату, ждать уведомление о новом собеседовании или закрыть заявку.",
+          message: "Мы отметили неявку по этой дате. Если хотите попробовать снова, можно записаться на следующую дату или перейти в ожидание нового собеседования.",
           slotId: candidate.interviewSlotId
         });
       }
@@ -475,9 +488,9 @@ export function applyInterviewCommand(input, command, options = {}) {
       candidate.leftAfterInterviewAt = now;
       candidate.internshipStage = "not_ready";
       touch(candidate, now);
-      appendNotification(state, candidate.id, "loss_reason_request", now, {
-        title: "Уточните причину",
-        message: "Если после собеседования вы не продолжаете путь, коротко отметьте причину.",
+      appendNotification(state, candidate.id, "cooperation_not_started", now, {
+        title: "Сотрудничество не начато",
+        message: "Мы отметили, что после собеседования вы не продолжили сотрудничество с LOFT HALL. Можно коротко указать причину в мини-приложении.",
         slotId: candidate.interviewSlotId
       });
       appendEvent(state, "candidate_left_after_interview", actor, now, {
@@ -627,14 +640,14 @@ function defaultSettings() {
         label: "Проходка LOFT 2/3",
         caption: "Проходка до LOFT 2/3",
         telegramFileId: ROUTE_FILE_ID,
-        telegramMethod: "document"
+        telegramMethod: "video"
       },
       {
         id: "loft_4_route",
         label: "Проходка LOFT 4",
         caption: "Проходка до LOFT 4",
         telegramFileId: ROUTE_FILE_ID,
-        telegramMethod: "document"
+        telegramMethod: "video"
       }
     ],
     resourceSteps: [
@@ -763,12 +776,15 @@ function normalizeVenue(venue = {}) {
 }
 
 function normalizeDirectionMaterial(material = {}) {
+  const fileId = clean(material.telegramFileId || material.fileId || material.file_id);
+  const rawMethod = clean(material.telegramMethod || material.method || "video") || "video";
+  const telegramMethod = rawMethod === "document" && fileId === ROUTE_FILE_ID ? "video" : rawMethod;
   return {
     id: clean(material.id || material.type || "route"),
     label: clean(material.label || material.name || "Проходка"),
     caption: clean(material.caption || material.description || "Проходка до площадки"),
-    telegramFileId: clean(material.telegramFileId || material.fileId || material.file_id),
-    telegramMethod: clean(material.telegramMethod || material.method || "document") || "document",
+    telegramFileId: fileId,
+    telegramMethod,
     publicUrl: clean(material.publicUrl || material.url)
   };
 }
@@ -851,7 +867,7 @@ function bookingMaterialsMessage(slot = {}) {
   if (slot.bookingText) lines.push(slot.bookingText);
   if (slot.venueAddress) lines.push(`Адрес: ${slot.venueAddress}.`);
   if (slot.directionsVideoUrl) lines.push(`Проходка: ${slot.directionsVideoUrl}`);
-  if (slot.directionsMaterial?.telegramFileId) lines.push("Проходка до площадки прикреплена отдельным файлом.");
+  if (slot.directionsMaterial?.telegramFileId) lines.push("Проходка до площадки прикреплена отдельным видео.");
   return lines.join(" ");
 }
 
@@ -1139,6 +1155,7 @@ function appendNotification(state, candidateId, type, now, payload = {}) {
     message: payload.message || "",
     slotId: payload.slotId || null,
     media: normalizeNotificationMedia(payload.media),
+    actions: normalizeNotificationActions(payload.actions),
     status: "pending",
     channel: "telegram",
     createdAt: now,
@@ -1151,12 +1168,30 @@ function normalizeNotificationMedia(media = []) {
   return Array.isArray(media)
     ? media
         .map((item) => ({
-          type: clean(item.type || "document"),
+          type: clean(item.type || "document") === "video" ? "video" : "document",
           fileId: clean(item.fileId || item.telegramFileId || item.file_id),
           caption: clean(item.caption || "")
         }))
         .filter((item) => item.fileId)
     : [];
+}
+
+function normalizeNotificationActions(actions = []) {
+  return Array.isArray(actions)
+    ? actions
+        .map((action) => ({
+          label: clean(action.label || action.text),
+          callbackData: clean(action.callbackData || action.callback_data)
+        }))
+        .filter((action) => action.label && action.callbackData)
+    : [];
+}
+
+function confirmationAction(candidateId, decision) {
+  return {
+    label: decision === "yes" ? "Да, приду" : "Нет, не смогу",
+    callbackData: `confirm:${decision}:${candidateId}`
+  };
 }
 
 function appendEvent(state, type, actor, now, details = {}) {

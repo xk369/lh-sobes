@@ -53,6 +53,8 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramFileId,
     "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA"
   );
+  assert.equal(state.settings.directionMaterials.find((item) => item.id === "loft_23_route").telegramMethod, "video");
+  assert.equal(state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramMethod, "video");
 
   ({ state } = applyInterviewCommand(
     state,
@@ -79,8 +81,9 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   );
   assert.equal(bookingMaterials.slotId, "slot-002");
   assert.match(bookingMaterials.message, /2-й Кожуховский проезд/);
+  assert.match(bookingMaterials.message, /видео/);
   assert.equal(bookingMaterials.media.length, 1);
-  assert.equal(bookingMaterials.media[0].type, "document");
+  assert.equal(bookingMaterials.media[0].type, "video");
   assert.equal(bookingMaterials.media[0].fileId, "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA");
 
   ({ state } = applyInterviewCommand(
@@ -89,6 +92,14 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     { now: "2026-08-11T10:00:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).confirmationStatus, "pending");
+  const confirmationRequest = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "confirmation_request"
+  );
+  assert.equal(confirmationRequest.actions.length, 2);
+  assert.deepEqual(
+    confirmationRequest.actions.map((action) => action.callbackData),
+    [`confirm:yes:${candidate.id}`, `confirm:no:${candidate.id}`]
+  );
 
   ({ state } = applyInterviewCommand(
     state,
@@ -108,7 +119,9 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   ));
   const noShow = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(noShow.status, "no_show");
-  assert.ok(state.notifications.some((item) => item.candidateId === candidate.id && item.type === "no_show_followup"));
+  const noShowFollowup = state.notifications.find((item) => item.candidateId === candidate.id && item.type === "no_show_followup");
+  assert.ok(noShowFollowup);
+  assert.match(noShowFollowup.message, /неявку/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -267,6 +280,11 @@ test("recruiter can mark candidate left after interview and complete slot", () =
   const left = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(left.status, "left_after_interview");
   assert.equal(left.candidateLayerStatus, "left_after_interview");
+  const cooperationNotification = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "cooperation_not_started"
+  );
+  assert.ok(cooperationNotification);
+  assert.match(cooperationNotification.message, /не продолжили сотрудничество/);
 
   ({ state } = applyInterviewCommand(
     state,

@@ -58,6 +58,13 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/telegram/webhook") {
+      const update = await readJson(req);
+      await handleTelegramUpdate(update);
+      sendJson(res, { ok: true });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/reset") {
       const state = createSeedState(new Date().toISOString());
       await saveState(state);
@@ -141,7 +148,8 @@ async function deliverPendingNotifications(state) {
         await sendTelegramApi("sendMessage", {
           chat_id: candidate.telegramId,
           text: messageText,
-          disable_web_page_preview: true
+          disable_web_page_preview: true,
+          reply_markup: replyMarkupForNotification(notification)
         });
       }
 
@@ -161,6 +169,45 @@ async function deliverPendingNotifications(state) {
   }
 
   return deriveState(nextState);
+}
+
+async function handleTelegramUpdate(update) {
+  const callback = update?.callback_query;
+  if (!callback) return;
+
+  const data = String(callback.data || "");
+  const [scope, decision, candidateId] = data.split(":");
+  if (scope !== "confirm" || !["yes", "no"].includes(decision) || !candidateId) {
+    await answerTelegramCallback(callback.id, "Команда не распознана");
+    return;
+  }
+
+  const state = await loadState();
+  const next = applyInterviewCommand(state, {
+    action: "candidate_confirm",
+    actor: "candidate",
+    payload: { candidateId, decision, actor: "telegram" }
+  });
+  const deliveredState = await deliverPendingNotifications(next.state);
+  await saveState(deliveredState);
+  await answerTelegramCallback(callback.id, decision === "yes" ? "Участие подтверждено" : "Отказ сохранен");
+}
+
+async function answerTelegramCallback(callbackQueryId, text) {
+  if (!callbackQueryId || !TELEGRAM_BOT_TOKEN) return;
+  await sendTelegramApi("answerCallbackQuery", {
+    callback_query_id: callbackQueryId,
+    text,
+    show_alert: false
+  });
+}
+
+function replyMarkupForNotification(notification) {
+  const actions = Array.isArray(notification.actions) ? notification.actions : [];
+  const buttons = actions
+    .filter((action) => action.label && action.callbackData)
+    .map((action) => ({ text: action.label, callback_data: action.callbackData }));
+  return buttons.length ? { inline_keyboard: [buttons] } : undefined;
 }
 
 async function sendTelegramMedia(chatId, media) {

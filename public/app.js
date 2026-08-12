@@ -172,7 +172,7 @@ document.addEventListener("click", async (event) => {
       await runCommand("mark_left_after_interview", {
         candidateId: button.dataset.candidateId
       }, button);
-      showToast("Кандидат отмечен как ушедший после собеса");
+      showToast("Кандидат отмечен как не продолживший сотрудничество");
       return;
     }
 
@@ -574,6 +574,10 @@ function renderCandidateStatus(candidate) {
 
   const slot = candidate.interviewSlotId ? state.slots.find((item) => item.id === candidate.interviewSlotId) : null;
   const canConfirm = candidate.confirmationStatus === "pending";
+  const canWithdrawInterview =
+    !canConfirm &&
+    ["booked", "confirmed"].includes(candidate.status) &&
+    ["unknown", "not_requested", "pending", "confirmed"].includes(candidate.attendanceStatus || "unknown");
   const canRebook = ["no_show", "declined_before_interview", "no_confirmation"].includes(candidate.status);
 
   return `
@@ -602,6 +606,11 @@ function renderCandidateStatus(candidate) {
         <div class="candidate-actions">
           <button type="button" class="success" data-action="candidate-confirm" data-decision="yes">Да, приду</button>
           <button type="button" class="danger" data-action="candidate-confirm" data-decision="no">Нет, не смогу</button>
+        </div>
+      ` : ""}
+      ${canWithdrawInterview ? `
+        <div class="candidate-actions">
+          <button type="button" class="danger" data-action="candidate-confirm" data-decision="no">Не смогу прийти</button>
         </div>
       ` : ""}
       ${canRebook ? `
@@ -656,7 +665,7 @@ function renderRegistrationLink(link, candidate) {
 }
 
 function renderLossReasonSurvey(candidate) {
-  const needsReason = ["no_show", "declined_before_interview", "no_confirmation", "rejected", "not_interested"].includes(candidate.status);
+  const needsReason = ["no_show", "declined_before_interview", "no_confirmation", "left_after_interview", "rejected", "not_interested"].includes(candidate.status);
   if (!needsReason) return "";
 
   return `
@@ -889,7 +898,7 @@ function renderRecruiterCandidate(candidate, index = 0) {
       ${renderCandidateResourceExceptions(candidate)}
       ${canContinue ? `
         <div class="candidate-actions">
-          <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Ушел после собеса</button>
+          <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Не продолжил</button>
         </div>
       ` : ""}
     </article>
@@ -1182,7 +1191,7 @@ function renderResourceCandidate(candidate, index = 0) {
       </div>
       ${renderCandidateResourceExceptions(candidate)}
       <div class="candidate-actions">
-        <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Ушел после собеса</button>
+        <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Не продолжил</button>
         <button type="button" class="quiet" data-action="use-candidate" data-candidate-id="${escapeAttr(candidate.id)}">Открыть</button>
       </div>
     </article>
@@ -1641,7 +1650,7 @@ function statusLabel(status) {
     declined_before_interview: "Отказ заранее",
     no_confirmation: "Не подтвердил",
     attended: "Пришел",
-    left_after_interview: "Ушел после собеса",
+    left_after_interview: "Не продолжил",
     no_show: "Не пришел",
     registration_pending: "Регистрация",
     registered: "Зарегистрирован",
@@ -1659,7 +1668,7 @@ function stageLabel(candidate) {
   if (candidate.status === "confirmation_pending") return "Ждет подтверждение";
   if (candidate.status === "confirmed") return "Подтвердил участие";
   if (candidate.status === "attended") return "Пришел на собес";
-  if (candidate.status === "left_after_interview") return "Ушел после собеседования";
+  if (candidate.status === "left_after_interview") return "Не продолжил сотрудничество";
   if (candidate.status === "registration_pending") return "Регистрация";
   if (candidate.status === "ready_for_internship") return "Стажировка";
   if (["no_show", "declined_before_interview", "no_confirmation"].includes(candidate.status)) return "Повторная запись или отказ";
@@ -1677,7 +1686,7 @@ function candidateLayerLabel(candidate) {
     interview_no_confirmation: "Не дал подтверждение",
     interview_attended: "Пришел на собеседование",
     resources_sent: "Ресурсы отправлены",
-    left_after_interview: "Ушел после собеседования",
+    left_after_interview: "Не продолжил сотрудничество",
     interview_no_show: "Не пришел на собеседование",
     interview_passed: "После собеседования",
     ready_for_internship: "Готов к стажировке",
@@ -1687,7 +1696,7 @@ function candidateLayerLabel(candidate) {
 }
 
 function journalStatusLabel(candidate) {
-  if (candidate.status === "left_after_interview") return "Ушел после собеса";
+  if (candidate.status === "left_after_interview") return "Пришел, но не продолжил";
   if (candidate.attendanceStatus === "arrived" && candidate.confirmationStatus === "confirmed") return "Подтвердил и пришел";
   if (candidate.attendanceStatus === "no_show" && candidate.confirmationStatus === "confirmed") return "Подтвердил, но не пришел";
   if (candidate.attendanceStatus === "declined_before" || candidate.confirmationStatus === "declined") return "Заранее отказался";
@@ -1709,7 +1718,7 @@ function attendanceLabel(value) {
     arrived: "Пришли",
     no_show: "Не пришли",
     no_confirmation: "Не подтвердили",
-    left_after: "Ушли после собеса"
+    left_after: "Не продолжили"
   };
   return labels[value] || value || "Статус";
 }
@@ -1752,7 +1761,7 @@ function eventTypeLabel(type) {
     resources_sent: "Ресурсы отправлены",
     resource_step_sent: "Ресурс отправлен",
     slot_completed: "Дата закрыта",
-    candidate_left_after_interview: "Ушел после собеса",
+    candidate_left_after_interview: "Не продолжил",
     registration_materials_sent: "Материалы регистрации",
     registration_marked: "Регистрация",
     slot_registered_all: "Все зареганы",
