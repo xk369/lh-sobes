@@ -47,14 +47,18 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
   assert.equal(
     state.settings.directionMaterials.find((item) => item.id === "loft_23_route").telegramFileId,
-    "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA"
+    "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E"
   );
   assert.equal(
     state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramFileId,
-    "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA"
+    "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E"
   );
   assert.equal(state.settings.directionMaterials.find((item) => item.id === "loft_23_route").telegramMethod, "video");
   assert.equal(state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramMethod, "video");
+  assert.equal(
+    state.settings.interviewVenues.find((item) => item.id === "loft1").address,
+    "ул. Ленинская Слобода, 26, стр. 35"
+  );
 
   ({ state } = applyInterviewCommand(
     state,
@@ -80,11 +84,12 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     (item) => item.candidateId === candidate.id && item.type === "booking_materials"
   );
   assert.equal(bookingMaterials.slotId, "slot-002");
+  assert.match(bookingMaterials.message, /РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ/);
   assert.match(bookingMaterials.message, /2-й Кожуховский проезд/);
   assert.match(bookingMaterials.message, /видео/);
   assert.equal(bookingMaterials.media.length, 1);
   assert.equal(bookingMaterials.media[0].type, "video");
-  assert.equal(bookingMaterials.media[0].fileId, "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA");
+  assert.equal(bookingMaterials.media[0].fileId, "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E");
 
   ({ state } = applyInterviewCommand(
     state,
@@ -243,9 +248,12 @@ test("arrived candidate receives resources without interview result buttons", ()
   assert.ok(withResources.resourcesSentAt);
   assert.equal(withResources.resourceStepsSent.length, 1);
   assert.equal(withResources.resourceStepsSent[0].type, "registration_bot");
-  assert.ok(
-    state.notifications.some((item) => item.candidateId === candidate.id && item.type === "resource_registration_bot")
+  const registrationNotification = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "resource_registration_bot"
   );
+  assert.ok(registrationNotification);
+  assert.match(registrationNotification.title, /Материалы LOFT HALL/);
+  assert.match(registrationNotification.message, /@LoftHallRegistrationBot/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -256,6 +264,10 @@ test("arrived candidate receives resources without interview result buttons", ()
   const withSecondResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withSecondResource.resourceStepsSent.length, 2);
   assert.equal(withSecondResource.resourceStepsSent[1].type, "unattested_group");
+  assert.match(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_unattested_group").message,
+    /@LoftHallStaffBot/
+  );
 
   ({ state } = applyInterviewCommand(
     state,
@@ -266,6 +278,10 @@ test("arrived candidate receives resources without interview result buttons", ()
   const withThirdResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withThirdResource.resourceStepsSent.length, 3);
   assert.equal(withThirdResource.resourceStepsSent[2].type, "self_employment");
+  assert.match(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_self_employment").message,
+    /КАК СТАТЬ САМОЗАНЯТЫМ/
+  );
 
   ({ state } = applyInterviewCommand(
     state,

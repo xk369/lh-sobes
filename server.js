@@ -153,12 +153,15 @@ async function deliverPendingNotifications(state) {
     try {
       const messageText = [notification.title, notification.message].filter(Boolean).join("\n\n");
       if (messageText) {
-        await sendTelegramApi("sendMessage", {
-          chat_id: candidate.telegramId,
-          text: messageText,
-          disable_web_page_preview: true,
-          reply_markup: replyMarkupForNotification(notification, candidate)
-        });
+        const chunks = splitTelegramText(messageText);
+        for (const [index, text] of chunks.entries()) {
+          await sendTelegramApi("sendMessage", {
+            chat_id: candidate.telegramId,
+            text,
+            disable_web_page_preview: true,
+            reply_markup: index === chunks.length - 1 ? replyMarkupForNotification(notification, candidate) : undefined
+          });
+        }
       }
 
       for (const media of notification.media || []) {
@@ -236,6 +239,24 @@ async function answerTelegramCallback(callbackQueryId, text) {
     text,
     show_alert: false
   });
+}
+
+function splitTelegramText(text, limit = 3500) {
+  const chunks = [];
+  let rest = String(text || "").trim();
+
+  while (rest.length > limit) {
+    let boundary = rest.lastIndexOf("\n\n", limit);
+    if (boundary < Math.floor(limit * 0.45)) boundary = rest.lastIndexOf("\n", limit);
+    if (boundary < Math.floor(limit * 0.45)) boundary = rest.lastIndexOf(" ", limit);
+    if (boundary < Math.floor(limit * 0.45)) boundary = limit;
+
+    chunks.push(rest.slice(0, boundary).trim());
+    rest = rest.slice(boundary).trim();
+  }
+
+  if (rest) chunks.push(rest);
+  return chunks;
 }
 
 function replyMarkupForNotification(notification, candidate) {

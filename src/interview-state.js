@@ -1,6 +1,183 @@
 const ACTIVE_INTERVIEW_RESULTS = new Set(["fit", "not_fit", "self_declined", "russian_low", "other"]);
 const LOSS_REASONS = new Set(["date_time", "location", "circumstances", "conditions", "other_offer", "other"]);
-const ROUTE_FILE_ID = "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA";
+const LEGACY_ROUTE_FILE_ID = "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA";
+const LOFT_23_ROUTE_FILE_ID = "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E";
+const LOFT_4_ROUTE_FILE_ID = "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E";
+const LEGACY_BOOKING_TEXT = "Вы записаны на собеседование. Сохраните адрес и приходите за 10 минут до начала.";
+const DEFAULT_BOOKING_TEXT = `РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ ДВУХ СТОЛИЦ!
+
+LOFT HALL – это комплекс из 7 особняков, более 30 event-пространств в самом центре Москвы. Обладатель премий: «Лучшая городская площадка для проведения свадьбы 2024», «Событие года», «Лучшая городская event-площадка 2023» и «Лучшая площадка России для проведения мероприятий 2025».
+
+Каждый год проводим более 1900 мероприятий всех форматов, масштабы – от 30 до 5000 гостей.
+
+Бизнес-тренинги и роскошные свадьбы на сотни гостей, презентации автомобилей и закрытые музыкальные тусовки – это не рабочая рутина, а причастность к созданию уникальных событий.
+
+Мы – часть дома ивентов LOFT HALL, состоящего из авторских пространств в сердце Москвы и Санкт-Петербурга. Наша концепция – первоклассное обслуживание, изысканная кухня и топовое оборудование в стильных интерьерах от голландского дизайнера Placebo/25 Development.
+
+Мы формируем команду для постоянной работы в пространствах LOFT#1, #2-3, #4, #8 ,THE BIRCH или подработки по графику, который выбираете вы. Круглый год у нас проходят мероприятия всех форматов с несколькими сотнями молодых сотрудников. Своя школа сервиса, гостеприимства и повышения качества.
+
+🎉 Мы предлагаем:
+
+• свободный график;
+• бесплатное обучение тонкостям профессии и оплачиваемые стажировки;
+• оплату с первого часа работы;
+• плановое повышение ставок в сезоны высокой загрузки;
+• выплаты раз в неделю в офисе компании или устройство по самозанятости;
+• обед от наших поваров;
+• компенсацию такси от 700 руб. после 00:35;
+• возможность совмещения нескольких вакансий внутри департамента;
+• работу в молодом коллективе и стильных пространствах в центре города;
+• неформальные встречи, фотосессии внутри лофтов и многое другое.
+
+Работайте на постоянной позиции или в графике, который подходит именно вам.
+Совмещайте учёбу и карьерный рост, получайте уникальный опыт в сфере гостеприимства!
+
+🎉 Действуйте, чтобы стать частью масштабного проекта LOFT HALL:
+
+Этап 1. Оплачиваемые стажировочные смены для сотрудников без опыта работы:
+
+Вы познакомитесь с компанией изнутри, изучите залы и техническое оснащение, инвентарь и логистику. Средняя загруженность полной рабочей смены – 10-12 ч, график выбираете вы себе сами, оплата от 400 руб/час. Разовая стажировка (по желанию) - 1000 рублей за 6 часов выполнения практических заданий от старшего официанта на банкете.
+
+Этап 2. Бесплатный Welcome-тренинг (по желанию):
+
+1я часть – теория: презентация LOFT HALL, обсуждение стандартов внутренних коммуникаций и корпоративной культуры, особенностей сервиса в индустрии гостеприимства.
+2я часть – практика: знакомство с правилами обслуживания гостей на банкетных мероприятиях.
+
+Этап 3. Переход из статуса стажера в опытные сотрудники:
+
+На основе этапов 1 и 2 вам будет предложено пройти тестирование на усвоение материала. По итогу положительного прохождения стажировки вы сможете получать приглашения и выходить на все форматы мероприятий и фестивали в свободном режиме.
+
+Этап 4. Профессиональное развитие и рост:
+
+Проявляя инициативу, ответственность и пунктуальность, ориентируясь в наших пространствах и работая в сменах не менее 3 раз в неделю, вы можете стать «постоянным официантом» LOFT HALL по ставке от 450 руб/час.
+
+🎉 Возможности карьерного роста для всех:
+
+• Проявляйте коммуникативные и организационные навыки, обучайте новых сотрудников, помогайте банкетному менеджеру в построении зала к мероприятию, чтобы стать супервайзером по ставке от 500-550 руб/час;
+• Вырастите из супервайзера в помощника банкетного менеджера на отличных условиях;
+• Займите интересную позицию в любом из направлений компании Placebo/25, если интересна работа в других департаментах!
+
+Станьте частью команды, организующей самые яркие события Москвы!
+
+https://msk.lofthall.ru/mobile`;
+const WORK_LINKS_MESSAGE = `Бот для записи на смену
+@LoftHallStaffBot
+
+Группа НЕАТТЕСТОВАННЫЕ
+https://t.me/+tpUuI31XJyA2ZWFi
+
+База знаний
+@LOFT_HELPER_V2_BOT`;
+const SELF_EMPLOYMENT_MESSAGE = `‼️📑ИНСТРУКЦИЯ
+«КАК СТАТЬ САМОЗАНЯТЫМ»
+
+Все, кто хочет получать зарплату на карту или уже писал в личные сообщения — внимательно следуйте инструкции ниже.
+
+~~~
+
+1. Установите два приложения:
+
+- Jump.Работа
+- Мой Налог
+
+~~~
+
+2. Зарегистрируйтесь в приложении «Мой Налог».
+
+Бухгалтер сориентирует вас как все заполнить.
+
+Нужно будет ввести ПАСПОРТНЫЕ ДАННЫЕ и данные БАНКОВСКОЙ КАРТЫ, на которую удобно получать заработную плату.
+
+~~~
+
+3. Переходите в телеграмм группу «Самозанятость МСК» и отправляете свои данные по шаблону:
+
+«Самозанятость МСК»
+👉 https://t.me/+XejcuYf5gmE2Nzdi
+
+Шаблон:
+Самозанятость официант Москва
+ФИО
+номер телефона (который прикрепили в «Мой налог»)
+банк по СБП (который прикрепили в «Мой налог»)
+
+Пример:
+«Самозанятость официант Москва, Иванов Иван Иванович, +79991234567, Сбербанк»
+
+⚠️ ВАЖНО:
+
+На данный момент группа «Самозанятость МСК» закрыта до 15.05 - это примерная дата.
+Вы не сможете туда отправлять сообщения. Поэтому свои данные вы «ВРЕМЕННО» отправляете бухгалтеру в лс. Телеграмм бухгалтера 👉🏼 @Dina_LoftHall
+
+⚠️ Бухгалтеру вы отправляете только данные по шаблону и всё!
+Вы не ведете диалог с бухгалтером, не пишите постоянно ей в ЛС.
+
+~~~
+
+4. Далее всю информацию, касаемо заработной платы вы будете получать в группе «Самозанятость МСК»
+
+Все дальнейшее общение только в группе. НЕ ПИСАТЬ в лс бухгалтерии!
+
+~~~
+
+5. Ссылка на договор
+
+Когда вы отправите данные бухгалтеру по шаблону, она ответным сообщением отправит вам ссылку на договор с нашей компанией.
+
+Переходите по ссылке, он перенесет вас в приложение «Мой налог» внутри вы подпишите договор.
+
+После переходите в приложение Jump.Работа и вновь подписываете договор.
+
+⚠️ВАЖНО:
+Только после этих двух шагов деньги начнут поступать на карту.
+
+⚠️ ВАЖНО:
+Данные в «Мой налог» и Jump.Работа должны полностью совпадать.
+
+Это номер телефона, паспортные данные и данные банковской карты.
+
+~~~
+
+6. Выплаты и налог
+
+💰 Выплаты приходят стабильно каждую пятницу — за прошлую рабочую неделю.
+Дни недели могут смещаться. Мы заранее будем вас предупреждать об этом в группе «Неаттестованные».
+
+🧾 Налог оплачивает сотрудник.
+
+Если вы заработали 10 000 ₽ — на карту придёт 10 600 ₽,
+и 600 ₽ - это налог.
+
+Налог оплачиваете вы самостоятельно в конце или в начале следующего месяца за ПРЕДЫДУЩИЙ МЕСЯЦ работы.
+
+Пример:
+За месяц работы у вас на карте скопилось 5000₽ на оплату налога.
+В приложении «Мой налог» появится уведомление о погашение прошлого периода (предыдущего месяца).
+И вы просто спокойно оплачиваете его в приложении.
+
+~~~
+
+7. Выплаты на доверенное лицо
+
+Если вы по каким-то причинам НЕ МОЖЕТЕ зарегистрироваться как самозанятый:
+
+Вариант 1. 👉🏼 Получает ваш коллега.
+
+Вы пишете расписку на сотрудника, который уже получает выплаты как СЗ в нашей компании.
+Шаблон расписки можно получить в офисе.
+Сдаёте оригинал в бухгалтерию.
+Бухгалтерия будет фиксировать вам суммы, чтобы вы знали свою реальную заработанную сумму.
+
+Вариант 2. 👉🏼 Получает человек, который НЕ РАБОТАЕТ в компании.
+
+Действия такие же, как в варианте №1:
+
+Делаете расписку
+Человек получает деньги за вас
+
+После чего переходите в Telegram-группу и пишите по шаблону:
+
+«Самозанятость официант Москва, Иванов Иван Иванович (ФИО того, кто получает деньги), получает за Петрова Петра Петровича (ваше ФИО), номер телефона (человека, который получает деньги), банк».`;
 const SLOT_HOLDING_STATUSES = new Set([
   "booked",
   "confirmation_pending",
@@ -144,7 +321,7 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
         id: "notif-001",
         candidateId: "cand-002",
         type: "resource_registration_bot",
-        title: "Ресурс LOFT HALL: бот регистрации",
+        title: "Материалы LOFT HALL: регистрация в основной базе",
         message: "Отправлена первая ссылка для регистрации в основной базе.",
         status: "sent",
         channel: "telegram_mock",
@@ -428,8 +605,8 @@ export function applyInterviewCommand(input, command, options = {}) {
           candidate.registrationStatus === "registered" ? "ready_for_internship" : "candidate_ready_for_registration";
         touch(candidate, now);
         appendNotification(state, candidate.id, "registration_materials", now, {
-          title: "Материалы для регистрации",
-          message: "Отправлены ссылки на группу неаттестованных, Helper Bot и рабочий бот.",
+          title: "Материалы LOFT HALL",
+          message: WORK_LINKS_MESSAGE,
           slotId: candidate.interviewSlotId
         });
       }
@@ -465,8 +642,8 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.internshipStage = "candidate_resources_sent";
         touch(candidate, now);
         appendNotification(state, candidate.id, `resource_${resourceStep.type}`, now, {
-          title: `Ресурс LOFT HALL: ${resourceStep.label}`,
-          message: `${resourceStep.description}. ${resourceStep.url}`,
+          title: `Материалы LOFT HALL: ${resourceStep.label}`,
+          message: resourceStepMessage(resourceStep),
           slotId: candidate.interviewSlotId
         });
       }
@@ -617,6 +794,12 @@ function defaultSettings() {
     autoMaterialDelayMinutes: 5,
     interviewVenues: [
       {
+        id: "loft1",
+        name: "LOFT#1",
+        address: "ул. Ленинская Слобода, 26, стр. 35",
+        directionsMaterialId: ""
+      },
+      {
         id: "loft2",
         name: "LOFT#2",
         address: "ул. Ленинская Слобода, 26с11",
@@ -640,55 +823,61 @@ function defaultSettings() {
         id: "loft_23_route",
         label: "Проходка LOFT 2/3",
         caption: "Проходка до LOFT 2/3",
-        telegramFileId: ROUTE_FILE_ID,
+        telegramFileId: LOFT_23_ROUTE_FILE_ID,
         telegramMethod: "video"
       },
       {
         id: "loft_4_route",
         label: "Проходка LOFT 4",
         caption: "Проходка до LOFT 4",
-        telegramFileId: ROUTE_FILE_ID,
+        telegramFileId: LOFT_4_ROUTE_FILE_ID,
         telegramMethod: "video"
       }
     ],
     resourceSteps: [
       {
         type: "registration_bot",
-        label: "Бот регистрации",
+        label: "Регистрация в основной базе",
         description: "Ссылка на регистрацию в основной базе",
-        url: "https://t.me/loft_helper_bot"
+        url: "https://t.me/LoftHallRegistrationBot",
+        message: "Ссылка на регистрацию в основной базе:\n@LoftHallRegistrationBot"
       },
       {
         type: "unattested_group",
-        label: "Группа неаттестованных",
-        description: "Группа для сотрудников до аттестации",
-        url: "https://t.me/loft_hall_unattested"
+        label: "Рабочие ссылки",
+        description: "Бот смен, группа неаттестованных и база знаний",
+        url: "",
+        message: WORK_LINKS_MESSAGE
       },
       {
         type: "self_employment",
         label: "Оформление самозанятости",
         description: "Инструкция по оформлению самозанятости",
-        url: "https://example.com/self-employment"
+        url: "",
+        message: SELF_EMPLOYMENT_MESSAGE
       }
     ],
     registrationLinks: [
       {
         type: "registration_bot",
-        label: "Бот регистрации",
+        label: "Регистрация в основной базе",
         description: "Ссылка на регистрацию в основной базе",
-        url: "https://t.me/loft_helper_bot"
+        url: "https://t.me/LoftHallRegistrationBot",
+        message: "Ссылка на регистрацию в основной базе:\n@LoftHallRegistrationBot"
       },
       {
         type: "unattested_group",
-        label: "Группа неаттестованных",
-        description: "Группа для сотрудников до аттестации",
-        url: "https://t.me/loft_hall_unattested"
+        label: "Рабочие ссылки",
+        description: "Бот смен, группа неаттестованных и база знаний",
+        url: "",
+        message: WORK_LINKS_MESSAGE
       },
       {
         type: "self_employment",
         label: "Оформление самозанятости",
         description: "Инструкция по оформлению самозанятости",
-        url: "https://example.com/self-employment"
+        url: "",
+        message: SELF_EMPLOYMENT_MESSAGE
       }
     ]
   };
@@ -726,7 +915,13 @@ function normalizeSettings(settings = {}) {
 }
 
 function mergeDefaultResourceSteps(steps = [], defaults = []) {
-  const merged = Array.isArray(steps) ? [...steps] : [];
+  const defaultsByType = new Map(defaults.map((step) => [clean(step.type || step.id), step]));
+  const merged = Array.isArray(steps)
+    ? steps.map((step) => {
+        const type = clean(step?.type || step?.id);
+        return defaultsByType.has(type) ? { ...step, ...defaultsByType.get(type) } : step;
+      })
+    : [];
   const knownTypes = new Set(merged.map((step) => clean(step?.type || step?.id)));
   for (const defaultStep of defaults) {
     const type = clean(defaultStep.type || defaultStep.id);
@@ -755,7 +950,13 @@ function mergeDefaultVenues(venues = [], defaults = []) {
 }
 
 function mergeDefaultDirectionMaterials(materials = [], defaults = []) {
-  const merged = Array.isArray(materials) ? [...materials] : [];
+  const defaultsById = new Map(defaults.map((material) => [clean(material.id || material.type), material]));
+  const merged = Array.isArray(materials)
+    ? materials.map((material) => {
+        const id = clean(material?.id || material?.type);
+        return defaultsById.has(id) ? { ...material, ...defaultsById.get(id) } : material;
+      })
+    : [];
   const knownIds = new Set(merged.map((material) => clean(material?.id || material?.type)));
   for (const defaultMaterial of defaults) {
     const id = clean(defaultMaterial.id || defaultMaterial.type);
@@ -777,11 +978,16 @@ function normalizeVenue(venue = {}) {
 }
 
 function normalizeDirectionMaterial(material = {}) {
-  const fileId = clean(material.telegramFileId || material.fileId || material.file_id);
+  const id = clean(material.id || material.type || "route");
+  const defaultFileId =
+    id === "loft_23_route" ? LOFT_23_ROUTE_FILE_ID : id === "loft_4_route" ? LOFT_4_ROUTE_FILE_ID : "";
+  const fileId = defaultFileId || clean(material.telegramFileId || material.fileId || material.file_id);
   const rawMethod = clean(material.telegramMethod || material.method || "video") || "video";
-  const telegramMethod = rawMethod === "document" && fileId === ROUTE_FILE_ID ? "video" : rawMethod;
+  const telegramMethod = rawMethod === "document" && [LEGACY_ROUTE_FILE_ID, LOFT_23_ROUTE_FILE_ID, LOFT_4_ROUTE_FILE_ID].includes(fileId)
+    ? "video"
+    : rawMethod;
   return {
-    id: clean(material.id || material.type || "route"),
+    id,
     label: clean(material.label || material.name || "Проходка"),
     caption: clean(material.caption || material.description || "Проходка до площадки"),
     telegramFileId: fileId,
@@ -793,9 +999,10 @@ function normalizeDirectionMaterial(material = {}) {
 function normalizeResourceStep(step = {}) {
   return {
     type: clean(step.type || step.id || "resource"),
-    label: clean(step.label || step.name || "Ресурс"),
+    label: clean(step.label || step.name || "Материалы"),
     description: clean(step.description || "Ссылка LOFT HALL"),
-    url: clean(step.url)
+    url: clean(step.url),
+    message: clean(step.message)
   };
 }
 
@@ -853,10 +1060,13 @@ function resolveDirectionMaterial(settings, value) {
 }
 
 function defaultBookingText(venue = {}) {
-  const place = [venue.name, venue.address].filter(Boolean).join(", ");
-  return place
-    ? `Вы записаны на собеседование: ${place}. Сохраните адрес и приходите за 10 минут до начала.`
-    : "Вы записаны на собеседование. Сохраните дату и приходите за 10 минут до начала.";
+  return DEFAULT_BOOKING_TEXT;
+}
+
+function normalizeBookingText(slot = {}, venue = {}) {
+  const text = clean(slot.bookingText || slot.confirmationText);
+  if (!text || text === LEGACY_BOOKING_TEXT) return defaultBookingText(venue);
+  return text;
 }
 
 function slotPlaceLine(slot = {}) {
@@ -972,9 +1182,9 @@ function deriveSlot(slot, candidates, settings = defaultSettings()) {
     directionsMaterialId: clean(slot.directionsMaterialId || venue.directionsMaterialId || directionsMaterial?.id),
     directionsMaterial,
     templateCleared: Boolean(slot.templateCleared),
-    bookingText: slot.templateCleared ? "" : clean(slot.bookingText || slot.confirmationText) || defaultBookingText(venue),
+    bookingText: slot.templateCleared ? "" : normalizeBookingText(slot, venue),
     directionsVideoUrl: slot.templateCleared ? "" : clean(slot.directionsVideoUrl || slot.confirmationVideoUrl),
-    confirmationText: slot.templateCleared ? "" : clean(slot.confirmationText || slot.bookingText) || defaultBookingText(venue),
+    confirmationText: slot.templateCleared ? "" : normalizeBookingText(slot, venue),
     confirmationVideoUrl: slot.templateCleared ? "" : clean(slot.confirmationVideoUrl || slot.directionsVideoUrl),
     bookedCount,
     confirmedCount,
@@ -1137,6 +1347,11 @@ function getResourceSteps(state) {
 
 function hasResourceStep(candidate, type) {
   return Array.isArray(candidate.resourceStepsSent) && candidate.resourceStepsSent.some((step) => step.type === type);
+}
+
+function resourceStepMessage(step = {}) {
+  if (step.message) return step.message;
+  return [step.description, step.url].filter(Boolean).join(". ");
 }
 
 function getCandidateTargets(state, payload) {

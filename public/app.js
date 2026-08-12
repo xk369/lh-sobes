@@ -167,7 +167,7 @@ document.addEventListener("click", async (event) => {
         slotId: button.dataset.slotId || ui.selectedSlotId || undefined,
         resourceType: button.dataset.resourceType || undefined
       }, button);
-      showToast(response.result.resourceLabel ? `${response.result.resourceLabel}: отправлено ${response.result.sentCount}` : "Все ресурсы уже отправлены");
+      showToast(response.result.resourceLabel ? `${response.result.resourceLabel}: отправлено ${response.result.sentCount}` : "Все материалы уже отправлены");
       return;
     }
 
@@ -448,7 +448,7 @@ function render() {
       <div class="head">
         <div>
           <h1>Собеседования</h1>
-          <p class="lead">Запись, ожидание новой даты, подтверждение, журнал явки и отправка ресурсов после собеса.</p>
+          <p class="lead">Запись, ожидание новой даты, подтверждение, журнал явки и отправка материалов после собеса.</p>
         </div>
       </div>
     </header>
@@ -623,14 +623,14 @@ function renderCandidateRegistration(candidate) {
   return `
     <section class="panel">
       <div class="panel-head">
-        <h2>Ресурсы</h2>
+        <h2>Материалы</h2>
         ${renderRegistrationPill(candidate.registrationStatus)}
       </div>
       <div class="notice">
         <b>Рекрут отправил ссылки LOFT HALL.</b>
       </div>
       <div class="link-grid">
-        ${links.map((link) => renderRegistrationLink(link, candidate)).join("") || '<div class="empty">Ресурсы пока не отправлены</div>'}
+        ${links.map((link) => renderRegistrationLink(link, candidate)).join("") || '<div class="empty">Материалы пока не отправлены</div>'}
       </div>
     </section>
   `;
@@ -834,7 +834,7 @@ function renderSlotResourceControls(slot, candidates) {
     <section class="resource-progress-panel">
       <div class="resource-progress-head">
         <div>
-          <h3>Ресурсы пришедшим</h3>
+          <h3>Материалы пришедшим</h3>
           <span>${candidates.length ? `Пришедших: ${candidates.length}` : "Пришедших пока нет"}</span>
         </div>
         <span class="pill accent">${progress.sent}/${progress.total} отправлено</span>
@@ -847,7 +847,7 @@ function renderSlotResourceControls(slot, candidates) {
         data-resource-type="${escapeAttr(nextStep?.type || "")}"
         ${disabled ? "disabled aria-disabled=\"true\"" : ""}
       >
-        ${nextStep ? `Отправить: ${nextStep.label}` : "Все ресурсы отправлены"}
+        ${nextStep ? `Отправить: ${nextStep.label}` : "Все материалы отправлены"}
       </button>
     </section>
   `;
@@ -1495,9 +1495,9 @@ function candidateStages(candidate) {
     },
     {
       key: "resources",
-      label: "Ресурсы",
-      title: resourceCount ? `Ресурсы ${resourceCount}/${resourceTotal}` : "Ресурсы после собеса",
-      description: "Пришедшим отправляются регистрация, группа неаттестованных и оформление самозанятости.",
+      label: "Материалы",
+      title: resourceCount ? `Материалы ${resourceCount}/${resourceTotal}` : "Материалы после собеса",
+      description: "Пришедшим отправляются регистрация, рабочие ссылки и оформление самозанятости.",
       icon: "send"
     }
   ];
@@ -1556,7 +1556,7 @@ function renderCandidateMeta(candidate) {
         <b>${escapeHtml(slot ? slotLabel(slot) : "не выбран")}</b>
       </div>
       <div class="candidate-info-item">
-        <span>Ресурсы</span>
+        <span>Материалы</span>
         <b>${escapeHtml(`${candidate.resourceStepsSent?.length || 0}/${resourceSteps().length || 0} отправлено`)}</b>
       </div>
     </div>
@@ -1718,7 +1718,7 @@ function statusLabel(status) {
 }
 
 function stageLabel(candidate) {
-  if (candidate.resourceStepsSent?.length > 0) return `Ресурсы ${candidate.resourceStepsSent.length}/${resourceSteps().length || 0}`;
+  if (candidate.resourceStepsSent?.length > 0) return `Материалы ${candidate.resourceStepsSent.length}/${resourceSteps().length || 0}`;
   if (candidate.status === "waitlist") return "В листе ожидания";
   if (candidate.status === "booked") return "Записан на собеседование";
   if (candidate.status === "confirmation_pending") return "Ждет подтверждение";
@@ -1741,7 +1741,7 @@ function candidateLayerLabel(candidate) {
     interview_declined_before: "Отказался до собеседования",
     interview_no_confirmation: "Не дал подтверждение",
     interview_attended: "Пришел на собеседование",
-    resources_sent: "Ресурсы отправлены",
+    resources_sent: "Материалы отправлены",
     left_after_interview: "Отказ после собеседования",
     interview_no_show: "Не пришел на собеседование",
     interview_passed: "После собеседования",
@@ -1815,8 +1815,8 @@ function eventTypeLabel(type) {
     candidate_confirmation_answered: "Ответ кандидата",
     attendance_marked: "Журнал явки",
     interview_result_set: "Итог собеса",
-    resources_sent: "Ресурсы отправлены",
-    resource_step_sent: "Ресурс отправлен",
+    resources_sent: "Материалы отправлены",
+    resource_step_sent: "Материалы отправлены",
     slot_completed: "Дата закрыта",
     candidate_left_after_interview: "Отказ после собеса",
     registration_materials_sent: "Материалы регистрации",
