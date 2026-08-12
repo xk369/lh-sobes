@@ -401,21 +401,17 @@ function renderCandidateForm(candidate) {
 
 function renderCandidateSlot(slot) {
   return `
-    <article class="date-card ${slot.availableSeats > 0 ? "selected" : "locked"}">
-      <div class="date-head">
+    <article class="date-card interview-date-card ${slot.availableSeats > 0 ? "selected" : "locked"}">
+      <div class="interview-date-main">
         <div>
           <div class="slot-title">${escapeHtml(slot.title)}</div>
-          <div class="meta">${escapeHtml(slot.time)} · ${escapeHtml(slot.venue)}</div>
-          ${slot.venueAddress ? `<div class="meta">${escapeHtml(slot.venueAddress)}</div>` : ""}
+          <div class="slot-line">${escapeHtml(formatDate(slot.date))} · ${escapeHtml(slot.time)}</div>
         </div>
         <span class="pill ${slot.availableSeats > 0 ? "ok" : "bad"}">${slot.availableSeats} мест</span>
       </div>
-      <div class="date-summary">
-        <div class="date-mark">${escapeHtml(dayNumber(slot.date))}</div>
-        <div>
-          <b>${escapeHtml(formatDate(slot.date))}</b>
-          <span>${escapeHtml([slot.time, slot.venue, slot.venueAddress].filter(Boolean).join(" · "))}</span>
-        </div>
+      <div class="slot-place">
+        <b>${escapeHtml(slot.venue)}</b>
+        ${slot.venueAddress ? `<span>${escapeHtml(slot.venueAddress)}</span>` : ""}
       </div>
       <button type="button" class="primary" data-action="book-slot" data-slot-id="${escapeAttr(slot.id)}" ${slot.availableSeats < 1 ? "disabled aria-disabled=\"true\"" : ""}>
         Записаться
@@ -554,13 +550,16 @@ function renderLossReasonSurvey(candidate) {
 }
 
 function renderRecruiterView() {
+  if (!["journal", "dates", "analytics"].includes(ui.recruiterTab)) {
+    ui.recruiterTab = "journal";
+  }
+
   return `
     <section class="recruiter-grid">
       <nav class="recruiter-nav" aria-label="Разделы рекрута">
         <button type="button" class="secondary" data-role="candidate">К форме записи</button>
         ${renderTab("journal", "Журнал")}
         ${renderTab("dates", "Даты")}
-        ${renderTab("registration", "Ресурсы")}
         ${renderTab("analytics", "Аналитика")}
       </nav>
 
@@ -571,7 +570,6 @@ function renderRecruiterView() {
 
 function renderRecruiterTab() {
   if (ui.recruiterTab === "dates") return renderDatesTab();
-  if (ui.recruiterTab === "registration") return renderRegistrationTab();
   if (ui.recruiterTab === "analytics") return renderAnalyticsTab();
   return renderJournalTab();
 }
@@ -710,12 +708,10 @@ function renderRecruiterCandidate(candidate, index = 0) {
           <div class="candidate-details-body">
             ${renderCandidateMeta(candidate)}
             ${candidate.note ? `<p class="candidate-note">${escapeHtml(candidate.note)}</p>` : ""}
+            ${renderAttendanceCorrection(candidate)}
           </div>
         </details>
-        <div class="attendance-quick-actions" aria-label="Отметка явки">
-          <button type="button" class="success" data-action="mark-arrived" data-candidate-id="${escapeAttr(candidate.id)}">Пришел</button>
-          <button type="button" class="danger" data-action="mark-noshow" data-candidate-id="${escapeAttr(candidate.id)}">Не пришел</button>
-        </div>
+        ${renderAttendanceControl(candidate)}
       </div>
       <div class="compact-person-row">
         ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
@@ -727,6 +723,49 @@ function renderRecruiterCandidate(candidate, index = 0) {
         </div>
       ` : ""}
     </article>
+  `;
+}
+
+function renderAttendanceControl(candidate) {
+  if (isUnmarkedCandidate(candidate)) {
+    return `
+      <div class="attendance-quick-actions" aria-label="Отметка явки">
+        <button type="button" class="success" data-action="mark-arrived" data-candidate-id="${escapeAttr(candidate.id)}">Пришел</button>
+        <button type="button" class="danger" data-action="mark-noshow" data-candidate-id="${escapeAttr(candidate.id)}">Не пришел</button>
+      </div>
+    `;
+  }
+
+  const tone = isArrivedCandidate(candidate) ? "ok" : "bad";
+  return `<span class="attendance-state ${tone}">${escapeHtml(attendanceMarkLabel(candidate))}</span>`;
+}
+
+function renderAttendanceCorrection(candidate) {
+  if (isUnmarkedCandidate(candidate)) return "";
+  return `
+    <div class="attendance-correction">
+      <span>Изменить отметку</span>
+      <div class="attendance-correction-actions">
+        <button
+          type="button"
+          class="success"
+          data-action="mark-arrived"
+          data-candidate-id="${escapeAttr(candidate.id)}"
+          ${isArrivedCandidate(candidate) ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Пришел
+        </button>
+        <button
+          type="button"
+          class="danger"
+          data-action="mark-noshow"
+          data-candidate-id="${escapeAttr(candidate.id)}"
+          ${isMissedCandidate(candidate) ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Не пришел
+        </button>
+      </div>
+    </div>
   `;
 }
 
@@ -754,14 +793,14 @@ function renderDatesTab() {
             Мест
             <input name="seats" type="number" min="1" value="12" required />
           </label>
-          <div class="form-subhead span-2">Материалы после подтверждения</div>
+          <div class="form-subhead span-2">Материалы после записи</div>
           <label class="span-2">
             Текст
-            <textarea name="confirmationText" placeholder="Короткая инструкция, которую кандидат получит после подтверждения"></textarea>
+            <textarea name="bookingText" placeholder="Короткая инструкция, которую кандидат получит сразу после записи"></textarea>
           </label>
           <label class="span-2">
-            Видео
-            <input name="confirmationVideoUrl" placeholder="https://..." />
+            Видео-проходка
+            <input name="directionsVideoUrl" placeholder="https://..." />
           </label>
           <div class="span-2 button-row">
             <button type="submit" class="primary">Создать и уведомить ожидание</button>
@@ -805,13 +844,17 @@ function renderWaitlistCandidate(candidate, index = 0) {
 
 function renderRecruiterSlot(slot) {
   return `
-    <article class="date-card ${slot.id === ui.selectedSlotId ? "selected" : ""}">
-      <div class="date-head">
+    <article class="date-card interview-date-card ${slot.id === ui.selectedSlotId ? "selected" : ""}">
+      <div class="interview-date-main">
         <div>
-          <div class="slot-title">${escapeHtml(slotLabel(slot))}</div>
-          ${slot.venueAddress ? `<div class="meta">${escapeHtml(slot.venueAddress)}</div>` : ""}
+          <div class="slot-title">${escapeHtml(slot.title)}</div>
+          <div class="slot-line">${escapeHtml(formatDate(slot.date))} · ${escapeHtml(slot.time)}</div>
         </div>
         <span class="pill ${slot.status === "open" ? "ok" : "bad"}">${escapeHtml(slot.status === "completed" ? "Завершена" : slot.status === "open" ? "Открыта" : "Закрыта")}</span>
+      </div>
+      <div class="slot-place">
+        <b>${escapeHtml(slot.venue)}</b>
+        ${slot.venueAddress ? `<span>${escapeHtml(slot.venueAddress)}</span>` : ""}
       </div>
       <div class="candidate-actions">
         <button type="button" class="secondary" data-action="request-confirmation" data-slot-id="${escapeAttr(slot.id)}">Подтверждение</button>
@@ -1268,6 +1311,13 @@ function journalStatusLabel(candidate) {
   if (candidate.attendanceStatus === "arrived") return "Пришел";
   if (candidate.attendanceStatus === "no_show") return "Не пришел";
   return "Ожидаем собеседование";
+}
+
+function attendanceMarkLabel(candidate) {
+  if (candidate.attendanceStatus === "arrived") return "Пришел";
+  if (candidate.attendanceStatus === "declined_before") return "Отказ";
+  if (candidate.attendanceStatus === "no_confirmation") return "Не подтвердил";
+  return "Не пришел";
 }
 
 function attendanceLabel(value) {

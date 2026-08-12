@@ -336,6 +336,59 @@ h3 {
   box-shadow: var(--shadow-lift);
 }
 
+.interview-date-card {
+  gap: 11px;
+  padding: 14px;
+}
+
+.interview-date-card.selected {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  box-shadow: none;
+}
+
+.interview-date-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.interview-date-main > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.slot-line {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.28;
+}
+
+.slot-place {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.slot-place b {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.slot-place span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
 .date-card.locked {
   background: color-mix(in srgb, var(--surface) 92%, var(--surface-2));
 }
@@ -779,6 +832,11 @@ button[aria-disabled="true"] {
   margin-left: 38px;
 }
 
+.candidate-mark-row.long-name .attendance-state {
+  width: fit-content;
+  margin-left: 38px;
+}
+
 .recruiter-person-details {
   display: grid;
   gap: 9px;
@@ -798,6 +856,61 @@ button[aria-disabled="true"] {
   padding: 0 7px;
   font-size: 12px;
   line-height: 1.08;
+}
+
+.attendance-state {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.attendance-state.ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--ok) 28%, var(--line));
+}
+
+.attendance-state.bad {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--bad) 26%, var(--line));
+}
+
+.attendance-correction {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 72%, var(--surface));
+  padding: 10px;
+}
+
+.attendance-correction > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.attendance-correction-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.attendance-correction-actions button {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 12px;
+  font-size: 12px;
+  padding: 0 8px;
 }
 
 .candidate-name-summary {
@@ -1273,7 +1386,7 @@ button[aria-disabled="true"] {
 
 .recruiter-nav {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(108px, 0.8fr)) auto;
+  grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(108px, 0.8fr));
   gap: 10px;
   align-items: stretch;
   margin: 10px 0 12px;
@@ -1522,6 +1635,12 @@ button[aria-disabled="true"] {
     min-height: 34px;
     border-radius: 12px;
     padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .attendance-state {
+    min-height: 32px;
+    padding: 0 9px;
     font-size: 11px;
   }
 

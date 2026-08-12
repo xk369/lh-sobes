@@ -16,7 +16,9 @@ test("new interview date automatically notifies waitlist candidates", () => {
         date: "2026-08-20",
         time: "13:00",
         venueId: "loft3",
-        seats: 8
+        seats: 8,
+        bookingText: "Вход со стороны главной проходной.",
+        directionsVideoUrl: "https://example.com/loft3-route"
       }
     },
     { now: "2026-08-10T10:00:00.000Z" }
@@ -28,6 +30,8 @@ test("new interview date automatically notifies waitlist candidates", () => {
   assert.equal(slot.title, "Собеседование LOFT HALL");
   assert.equal(slot.venue, "LOFT#3");
   assert.equal(slot.venueAddress, "ул. Ленинская Слобода, 26с15");
+  assert.equal(slot.bookingText, "Вход со стороны главной проходной.");
+  assert.equal(slot.directionsVideoUrl, "https://example.com/loft3-route");
 
   const waitlistCandidate = state.candidates.find((candidate) => candidate.id === "cand-003");
   assert.equal(waitlistCandidate.waitlistTargetSlotId, result.result.slotId);
@@ -62,6 +66,11 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
 
   const candidate = state.candidates.find((item) => item.telegramId === "555555555");
   assert.equal(candidate.status, "booked");
+  const bookingMaterials = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "booking_materials"
+  );
+  assert.equal(bookingMaterials.slotId, "slot-002");
+  assert.match(bookingMaterials.message, /2-й Кожуховский проезд/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -76,6 +85,10 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     { now: "2026-08-12T10:00:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "confirmed");
+  assert.equal(
+    state.notifications.filter((item) => item.candidateId === candidate.id && item.type === "confirmation_materials").length,
+    0
+  );
 
   ({ state } = applyInterviewCommand(
     state,

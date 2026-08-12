@@ -46,8 +46,8 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
         venueAddress: "ул. Ленинская Слобода, 26с11",
         seats: 12,
         status: "open",
-        confirmationText: "После подтверждения пришлем короткую инструкцию по входу и встрече на площадке.",
-        confirmationVideoUrl: "",
+        bookingText: "Вы записаны на собеседование. Сохраните адрес и приходите за 10 минут до начала.",
+        directionsVideoUrl: "",
         createdAt: now
       },
       {
@@ -60,8 +60,8 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
         venueAddress: "2-й Кожуховский проезд, 29к6",
         seats: 10,
         status: "open",
-        confirmationText: "После подтверждения пришлем короткую инструкцию по входу и встрече на площадке.",
-        confirmationVideoUrl: "",
+        bookingText: "Вы записаны на собеседование. Сохраните адрес и приходите за 10 минут до начала.",
+        directionsVideoUrl: "",
         createdAt: now
       }
     ],
@@ -212,6 +212,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         message: `${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. За день до собеседования придет запрос подтверждения.`,
         slotId: slot.id
       });
+      appendBookingMaterials(state, candidate, slot, now);
       appendEvent(state, "candidate_booked_slot", actor, now, { candidateId: candidate.id, slotId: slot.id });
       result = { candidateId: candidate.id, slotId: slot.id };
       break;
@@ -250,8 +251,8 @@ export function applyInterviewCommand(input, command, options = {}) {
         venueAddress: venue.address,
         seats: Math.max(Number(payload.seats || 1), 1),
         status: payload.status === "closed" ? "closed" : "open",
-        confirmationText: clean(payload.confirmationText) || defaultConfirmationText(venue),
-        confirmationVideoUrl: clean(payload.confirmationVideoUrl),
+        bookingText: clean(payload.bookingText || payload.confirmationText) || defaultBookingText(venue),
+        directionsVideoUrl: clean(payload.directionsVideoUrl || payload.confirmationVideoUrl),
         createdAt: now
       };
       state.slots.push(slot);
@@ -307,14 +308,6 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.candidateLayerStatus = "interview_confirmed";
         candidate.confirmationStatus = "confirmed";
         candidate.confirmedAt = now;
-        const slot = candidate.interviewSlotId ? requireSlot(state, candidate.interviewSlotId) : null;
-        if (slot && (slot.confirmationText || slot.confirmationVideoUrl)) {
-          appendNotification(state, candidate.id, "confirmation_materials", now, {
-            title: "Инструкция перед собеседованием",
-            message: confirmationMaterialsMessage(slot),
-            slotId: slot.id
-          });
-        }
       } else {
         candidate.status = "declined_before_interview";
         candidate.candidateLayerStatus = "interview_declined_before";
@@ -547,6 +540,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         const slot = requireSlot(state, payload.slotId);
         if (availableSeats(state, slot.id) < 1) throw new Error("No seats left for this slot");
         applyBooking(candidate, slot.id, now);
+        appendBookingMaterials(state, candidate, slot, now);
       } else {
         candidate.status = "waitlist";
         candidate.candidateLayerStatus = "waiting_for_interview_date";
@@ -736,21 +730,22 @@ function resolveVenueReference(settings, value) {
   return { id: "", name: clean(value) || "LOFT HALL", address: "" };
 }
 
-function defaultConfirmationText(venue = {}) {
+function defaultBookingText(venue = {}) {
   const place = [venue.name, venue.address].filter(Boolean).join(", ");
   return place
-    ? `Ждем вас на собеседовании: ${place}. После подтверждения отправим дополнительные материалы.`
-    : "После подтверждения отправим дополнительные материалы по собеседованию.";
+    ? `Вы записаны на собеседование: ${place}. Сохраните адрес и приходите за 10 минут до начала.`
+    : "Вы записаны на собеседование. Сохраните дату и приходите за 10 минут до начала.";
 }
 
 function slotPlaceLine(slot = {}) {
   return [slot.venue, slot.venueAddress].filter(Boolean).join(", ") || "LOFT HALL";
 }
 
-function confirmationMaterialsMessage(slot = {}) {
+function bookingMaterialsMessage(slot = {}) {
   const lines = [];
-  if (slot.confirmationText) lines.push(slot.confirmationText);
-  if (slot.confirmationVideoUrl) lines.push(`Видео: ${slot.confirmationVideoUrl}`);
+  if (slot.bookingText) lines.push(slot.bookingText);
+  if (slot.venueAddress) lines.push(`Адрес: ${slot.venueAddress}.`);
+  if (slot.directionsVideoUrl) lines.push(`Проходка: ${slot.directionsVideoUrl}`);
   return lines.join(" ");
 }
 
@@ -850,8 +845,10 @@ function deriveSlot(slot, candidates, settings = defaultSettings()) {
     venueId: clean(slot.venueId || venue.id),
     venue: clean(slot.venue || venue.name) || "LOFT HALL",
     venueAddress: clean(slot.venueAddress || venue.address),
-    confirmationText: clean(slot.confirmationText) || defaultConfirmationText(venue),
-    confirmationVideoUrl: clean(slot.confirmationVideoUrl),
+    bookingText: clean(slot.bookingText || slot.confirmationText) || defaultBookingText(venue),
+    directionsVideoUrl: clean(slot.directionsVideoUrl || slot.confirmationVideoUrl),
+    confirmationText: clean(slot.confirmationText || slot.bookingText) || defaultBookingText(venue),
+    confirmationVideoUrl: clean(slot.confirmationVideoUrl || slot.directionsVideoUrl),
     bookedCount,
     confirmedCount,
     confirmationPendingCount,
@@ -954,11 +951,20 @@ function notifyWaitlist(state, slotId, now) {
     touch(candidate, now);
     appendNotification(state, candidate.id, "waitlist_new_slot", now, {
       title: "Открыта новая дата собеседования",
-      message: `${slot.date} в ${slot.time}, ${slot.venue}. Можно записаться на эту дату.`,
+      message: `${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. Можно записаться на эту дату.`,
       slotId: slot.id
     });
   }
   return waitlist.length;
+}
+
+function appendBookingMaterials(state, candidate, slot, now) {
+  if (!slot.bookingText && !slot.directionsVideoUrl && !slot.venueAddress) return;
+  appendNotification(state, candidate.id, "booking_materials", now, {
+    title: "Материалы к собеседованию",
+    message: bookingMaterialsMessage(slot),
+    slotId: slot.id
+  });
 }
 
 function registrationTargets(state, slotId) {
