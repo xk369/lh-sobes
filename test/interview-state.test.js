@@ -135,6 +135,31 @@ test("candidate telegram is required for shared candidate records", () => {
   );
 });
 
+test("slot template can be cleared without restoring default booking text", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  const result = applyInterviewCommand(
+    state,
+    {
+      action: "create_slot",
+      payload: {
+        date: "2026-08-21",
+        time: "18:00",
+        venueId: "loft2",
+        seats: 6,
+        templateCleared: "true"
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  );
+
+  state = result.state;
+  const slot = state.slots.find((item) => item.id === result.result.slotId);
+  assert.equal(slot.templateCleared, true);
+  assert.equal(slot.bookingText, "");
+  assert.equal(slot.directionsVideoUrl, "");
+});
+
 test("arrived candidate receives resources without interview result buttons", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
 
@@ -198,6 +223,16 @@ test("arrived candidate receives resources without interview result buttons", ()
   const withSecondResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withSecondResource.resourceStepsSent.length, 2);
   assert.equal(withSecondResource.resourceStepsSent[1].type, "unattested_group");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "send_resource_step", payload: { slotId: "slot-002" } },
+    { now: "2026-08-13T12:36:00.000Z" }
+  ));
+
+  const withThirdResource = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(withThirdResource.resourceStepsSent.length, 3);
+  assert.equal(withThirdResource.resourceStepsSent[2].type, "self_employment");
 
   ({ state } = applyInterviewCommand(
     state,

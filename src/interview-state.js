@@ -241,6 +241,7 @@ export function applyInterviewCommand(input, command, options = {}) {
 
     case "create_slot": {
       const venue = resolveInterviewVenue(state.settings, payload);
+      const templateCleared = payload.templateCleared === true || payload.templateCleared === "true";
       const slot = {
         id: payload.id || nextId("slot", state.slots),
         title: "Собеседование LOFT HALL",
@@ -251,8 +252,9 @@ export function applyInterviewCommand(input, command, options = {}) {
         venueAddress: venue.address,
         seats: Math.max(Number(payload.seats || 1), 1),
         status: payload.status === "closed" ? "closed" : "open",
-        bookingText: clean(payload.bookingText || payload.confirmationText) || defaultBookingText(venue),
-        directionsVideoUrl: clean(payload.directionsVideoUrl || payload.confirmationVideoUrl),
+        templateCleared,
+        bookingText: templateCleared ? "" : clean(payload.bookingText || payload.confirmationText) || defaultBookingText(venue),
+        directionsVideoUrl: templateCleared ? "" : clean(payload.directionsVideoUrl || payload.confirmationVideoUrl),
         createdAt: now
       };
       state.slots.push(slot);
@@ -627,6 +629,12 @@ function defaultSettings() {
         label: "Группа неаттестованных",
         description: "Группа для сотрудников до аттестации",
         url: "https://t.me/loft_hall_unattested"
+      },
+      {
+        type: "self_employment",
+        label: "Оформление самозанятости",
+        description: "Инструкция по оформлению самозанятости",
+        url: "https://example.com/self-employment"
       }
     ],
     registrationLinks: [
@@ -641,6 +649,12 @@ function defaultSettings() {
         label: "Группа неаттестованных",
         description: "Группа для сотрудников до аттестации",
         url: "https://t.me/loft_hall_unattested"
+      },
+      {
+        type: "self_employment",
+        label: "Оформление самозанятости",
+        description: "Инструкция по оформлению самозанятости",
+        url: "https://example.com/self-employment"
       }
     ]
   };
@@ -648,22 +662,39 @@ function defaultSettings() {
 
 function normalizeSettings(settings = {}) {
   const defaults = defaultSettings();
-  const resourceSteps = Array.isArray(settings.resourceSteps) && settings.resourceSteps.length
+  const resourceSteps = mergeDefaultResourceSteps(Array.isArray(settings.resourceSteps) && settings.resourceSteps.length
     ? settings.resourceSteps
-    : defaults.resourceSteps;
+    : defaults.resourceSteps, defaults.resourceSteps);
   const interviewVenues = Array.isArray(settings.interviewVenues) && settings.interviewVenues.length
     ? settings.interviewVenues
     : defaults.interviewVenues;
+  const registrationLinks = mergeDefaultResourceSteps(
+    Array.isArray(settings.registrationLinks) && settings.registrationLinks.length
+      ? settings.registrationLinks
+      : resourceSteps,
+    resourceSteps
+  );
 
   return {
     ...defaults,
     ...settings,
     interviewVenues: interviewVenues.map(normalizeVenue),
     resourceSteps: resourceSteps.map(normalizeResourceStep),
-    registrationLinks: Array.isArray(settings.registrationLinks) && settings.registrationLinks.length
-      ? settings.registrationLinks.map(normalizeResourceStep)
-      : resourceSteps.map(normalizeResourceStep)
+    registrationLinks: registrationLinks.map(normalizeResourceStep)
   };
+}
+
+function mergeDefaultResourceSteps(steps = [], defaults = []) {
+  const merged = Array.isArray(steps) ? [...steps] : [];
+  const knownTypes = new Set(merged.map((step) => clean(step?.type || step?.id)));
+  for (const defaultStep of defaults) {
+    const type = clean(defaultStep.type || defaultStep.id);
+    if (!knownTypes.has(type)) {
+      merged.push(defaultStep);
+      knownTypes.add(type);
+    }
+  }
+  return merged;
 }
 
 function normalizeVenue(venue = {}) {
@@ -845,10 +876,11 @@ function deriveSlot(slot, candidates, settings = defaultSettings()) {
     venueId: clean(slot.venueId || venue.id),
     venue: clean(slot.venue || venue.name) || "LOFT HALL",
     venueAddress: clean(slot.venueAddress || venue.address),
-    bookingText: clean(slot.bookingText || slot.confirmationText) || defaultBookingText(venue),
-    directionsVideoUrl: clean(slot.directionsVideoUrl || slot.confirmationVideoUrl),
-    confirmationText: clean(slot.confirmationText || slot.bookingText) || defaultBookingText(venue),
-    confirmationVideoUrl: clean(slot.confirmationVideoUrl || slot.directionsVideoUrl),
+    templateCleared: Boolean(slot.templateCleared),
+    bookingText: slot.templateCleared ? "" : clean(slot.bookingText || slot.confirmationText) || defaultBookingText(venue),
+    directionsVideoUrl: slot.templateCleared ? "" : clean(slot.directionsVideoUrl || slot.confirmationVideoUrl),
+    confirmationText: slot.templateCleared ? "" : clean(slot.confirmationText || slot.bookingText) || defaultBookingText(venue),
+    confirmationVideoUrl: slot.templateCleared ? "" : clean(slot.confirmationVideoUrl || slot.directionsVideoUrl),
     bookedCount,
     confirmedCount,
     confirmationPendingCount,

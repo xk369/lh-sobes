@@ -496,6 +496,11 @@ textarea {
   line-height: 1.42;
 }
 
+input[type="date"] {
+  min-inline-size: 0;
+  -webkit-min-logical-width: 100%;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -513,6 +518,19 @@ textarea:focus {
 
 .candidate-short-form {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.time-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.time-select-row select {
+  min-width: 0;
+  text-align: center;
+  font-weight: 900;
 }
 
 .form-autosave {
@@ -1236,6 +1254,10 @@ button[aria-disabled="true"] {
   font-weight: 950;
 }
 
+.slot-form-actions {
+  grid-template-columns: minmax(130px, 0.7fr) minmax(0, 1.3fr);
+}
+
 .panel-title-stack {
   display: grid;
   gap: 3px;
@@ -1316,12 +1338,12 @@ button[aria-disabled="true"] {
 .stage-track {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: center;
+  align-items: start;
   gap: 0;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: color-mix(in srgb, var(--field) 86%, var(--surface-2));
-  padding: 8px 7px;
+  padding: 8px 7px 7px;
 }
 
 .stage-track.five {
@@ -1331,8 +1353,10 @@ button[aria-disabled="true"] {
 .stage-node {
   position: relative;
   min-width: 0;
-  height: 32px;
+  min-height: 48px;
   display: grid;
+  grid-template-rows: 32px auto;
+  gap: 5px;
   place-items: center;
   border: 0;
   background: transparent;
@@ -1346,10 +1370,9 @@ button[aria-disabled="true"] {
   position: absolute;
   right: 50%;
   left: -50%;
-  top: 50%;
+  top: 16px;
   height: 2px;
   background: var(--line);
-  transform: translateY(-50%);
 }
 
 .stage-node:first-child::before {
@@ -1398,6 +1421,149 @@ button[aria-disabled="true"] {
   background: var(--accent);
   color: #ffffff;
   box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.stage-caption {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.stage-node.done .stage-caption,
+.stage-node.current .stage-caption {
+  color: var(--accent);
+}
+
+.stage-help {
+  display: grid;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent-soft) 66%, transparent);
+  padding: 9px 10px;
+}
+
+.stage-help b {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.stage-help span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.32;
+}
+
+.archive-panel {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.archive-panel summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--button-quiet-bg);
+  padding: 0 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.archive-panel summary::-webkit-details-marker,
+.archive-slot-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.archive-panel summary::marker,
+.archive-slot-card summary::marker {
+  content: "";
+}
+
+.archive-panel summary span {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.archive-panel summary b {
+  min-width: 28px;
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.archive-panel[open] {
+  gap: 10px;
+}
+
+.archive-search {
+  margin-top: 10px;
+}
+
+.archive-date-list {
+  margin-top: 10px;
+}
+
+.archive-slot-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.archive-slot-card summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.archive-slot-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.archive-slot-main b {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+
+.archive-slot-main span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.archive-candidate-card .candidate-name-summary {
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .timeline {
@@ -1469,7 +1635,7 @@ button[aria-disabled="true"] {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.75fr) minmax(138px, auto) minmax(126px, auto);
   gap: 10px;
   align-items: end;
 }
@@ -1566,6 +1732,7 @@ button[aria-disabled="true"] {
   .candidate-actions,
   .candidate-card-actions,
   .button-row,
+  .slot-form-actions,
   .link-grid,
   .timeline {
     grid-template-columns: 1fr;
@@ -1706,6 +1873,18 @@ button[aria-disabled="true"] {
   .resource-progress-panel > button {
     min-height: 40px;
     font-size: 13px;
+  }
+
+  .stage-track {
+    padding-inline: 5px;
+  }
+
+  .stage-caption {
+    font-size: 8.8px;
+  }
+
+  .archive-slot-card {
+    padding: 9px;
   }
 }
 

@@ -4,6 +4,8 @@ const ui = {
   candidateId: localStorage.getItem("lh_interviews_candidate_id") || "",
   selectedSlotId: "",
   recruiterSearch: "",
+  archiveSearch: "",
+  stageHelpKey: "",
   actionFeedback: {}
 };
 
@@ -54,6 +56,23 @@ document.addEventListener("click", async (event) => {
       rememberActionFeedback(button);
       render();
       showToast("Дата выбрана");
+      return;
+    }
+
+    if (action === "clear-slot-template") {
+      const form = button.closest("#slot-form");
+      if (!form) return;
+      form.elements.bookingText.value = "";
+      form.elements.directionsVideoUrl.value = "";
+      form.elements.templateCleared.value = "true";
+      rememberActionFeedback(button);
+      showToast("Шаблон очищен");
+      return;
+    }
+
+    if (action === "show-stage-help") {
+      ui.stageHelpKey = button.dataset.stageKey || "";
+      render();
       return;
     }
 
@@ -159,6 +178,8 @@ document.addEventListener("click", async (event) => {
 
     if (action === "complete-slot") {
       await runCommand("complete_slot", { slotId: button.dataset.slotId || ui.selectedSlotId }, button);
+      ui.selectedSlotId = firstActiveSlot()?.id || "";
+      render();
       showToast("Собеседование завершено");
       return;
     }
@@ -250,6 +271,25 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-archive-search]")) {
+    ui.archiveSearch = event.target.value;
+    render();
+    requestAnimationFrame(() => {
+      const input = document.querySelector("[data-archive-search]");
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(ui.archiveSearch.length, ui.archiveSearch.length);
+    });
+    return;
+  }
+
+  if (event.target.matches("#slot-form [name='bookingText'], #slot-form [name='directionsVideoUrl']")) {
+    const form = event.target.closest("#slot-form");
+    if (form?.elements.templateCleared) {
+      form.elements.templateCleared.value = "";
+    }
+  }
+
   if (event.target.closest("#candidate-form")) {
     scheduleCandidateAutosave();
   }
@@ -270,6 +310,12 @@ document.addEventListener("submit", async (event) => {
 
     if (form.id === "slot-form") {
       const data = Object.fromEntries(new FormData(form));
+      data.time = `${data.hour}:${data.minute}`;
+      delete data.hour;
+      delete data.minute;
+      if (data.bookingText?.trim() || data.directionsVideoUrl?.trim()) {
+        data.templateCleared = "";
+      }
       const response = await runCommand("create_slot", data);
       form.reset();
       showToast(`Дата создана, уведомлений: ${response.result.notifiedCount || 0}`);
@@ -377,8 +423,8 @@ function render() {
     return;
   }
 
-  if (!state.slots.some((slot) => slot.id === ui.selectedSlotId) && state.slots[0]) {
-    ui.selectedSlotId = state.slots[0].id;
+  if (!activeSlots().some((slot) => slot.id === ui.selectedSlotId)) {
+    ui.selectedSlotId = firstActiveSlot()?.id || "";
   }
 
   const candidate = getCurrentCandidate();
@@ -428,6 +474,14 @@ function renderCandidateView(candidate) {
 
       <section class="panel">
         <div class="panel-head">
+          <h2>Мой статус</h2>
+          ${candidate ? renderStatusPill(candidate.status) : ""}
+        </div>
+        ${renderCandidateStatus(candidate)}
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
           <h2>Запись</h2>
           <span class="pill ok">${openSlots.length} дат</span>
         </div>
@@ -437,15 +491,6 @@ function renderCandidateView(candidate) {
         <button type="button" class="secondary" data-action="join-waitlist">Уведомить о следующем собеседовании</button>
       </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Мой статус</h2>
-          ${candidate ? renderStatusPill(candidate.status) : ""}
-        </div>
-        ${renderCandidateStatus(candidate)}
-      </section>
-
-      ${candidate ? renderCandidateRegistration(candidate) : ""}
       ${candidate ? renderLossReasonSurvey(candidate) : ""}
     </section>
   `;
@@ -654,6 +699,7 @@ function renderJournalTab() {
   const candidates = filterCandidates(slotCandidates);
   const slot = state.slots.find((item) => item.id === ui.selectedSlotId);
   const confirmationsRequested = slotConfirmationRequested(ui.selectedSlotId);
+  const slotOpen = slot?.status === "open";
   const unmarked = candidates.filter(isUnmarkedCandidate);
   const arrived = candidates.filter(isArrivedCandidate);
   const arrivedAll = slotCandidates.filter(isArrivedCandidate);
@@ -675,8 +721,18 @@ function renderJournalTab() {
           class="${confirmationsRequested ? "success" : "secondary"}${actionDoneClass(confirmationsRequested, "send-due-confirmations", { slotId: ui.selectedSlotId })}"
           data-action="send-due-confirmations"
           data-slot-id="${escapeAttr(ui.selectedSlotId)}"
+          ${!slotOpen ? "disabled aria-disabled=\"true\"" : ""}
         >
           ${confirmationsRequested ? "Подтверждение отправлено" : "Подтверждение за день"}
+        </button>
+        <button
+          type="button"
+          class="danger${actionFeedbackClass("complete-slot", { slotId: ui.selectedSlotId })}"
+          data-action="complete-slot"
+          data-slot-id="${escapeAttr(ui.selectedSlotId)}"
+          ${!slotOpen ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Собес завершен
         </button>
       </div>
       ${renderJournalGroup("Не отмечены", unmarked, "wait")}
@@ -709,6 +765,18 @@ function waitlistNotifiedForSlot(slotId) {
   return state.candidates.some(
     (candidate) => candidate.status === "waitlist" && candidate.waitlistTargetSlotId === slotId && candidate.lastWaitlistNotifiedAt
   );
+}
+
+function activeSlots() {
+  return state.slots.filter((slot) => slot.status !== "completed");
+}
+
+function archivedSlots() {
+  return state.slots.filter((slot) => slot.status === "completed");
+}
+
+function firstActiveSlot() {
+  return activeSlots()[0] || null;
 }
 
 function renderSlotResourceControls(slot, candidates) {
@@ -864,21 +932,27 @@ function renderAttendanceCorrection(candidate) {
 
 function renderDatesTab() {
   const waitlist = state.candidates.filter((candidate) => candidate.status === "waitlist");
-  const selectedSlot = state.slots.find((slot) => slot.id === ui.selectedSlotId);
+  const selectedSlot = activeSlots().find((slot) => slot.id === ui.selectedSlotId);
   const waitlistNotified = waitlistNotifiedForSlot(ui.selectedSlotId);
+  const visibleActiveSlots = activeSlots();
+  const visibleArchivedSlots = filterArchivedSlots(archivedSlots());
 
   return `
     <section class="grid">
       <section class="panel">
         <h2>Добавить дату</h2>
         <form id="slot-form" class="form-grid two">
+          <input type="hidden" name="templateCleared" value="" />
           <label>
             Дата
-            <input name="date" type="date" required />
+            <input name="date" type="date" required lang="ru-RU" />
           </label>
           <label>
-            Время
-            <input name="time" type="time" required />
+            Время МСК
+            <span class="time-select-row">
+              <select name="hour" required aria-label="Часы">${renderHourOptions()}</select>
+              <select name="minute" required aria-label="Минуты">${renderMinuteOptions()}</select>
+            </span>
           </label>
           <label>
             Площадка
@@ -897,8 +971,9 @@ function renderDatesTab() {
             Видео-проходка
             <input name="directionsVideoUrl" placeholder="https://..." />
           </label>
-          <div class="span-2 button-row">
-            <button type="submit" class="primary">Создать и уведомить ожидание</button>
+          <div class="span-2 button-row slot-form-actions">
+            <button type="button" class="quiet" data-action="clear-slot-template">Очистить шаблон</button>
+            <button type="submit" class="primary">Создать и уведомить лист</button>
           </div>
         </form>
       </section>
@@ -906,8 +981,8 @@ function renderDatesTab() {
       <section class="panel">
         <div class="panel-head">
           <div class="panel-title-stack">
-            <h2>Лист ожидания</h2>
-            ${selectedSlot ? `<span>${escapeHtml(slotLabel(selectedSlot))}</span>` : ""}
+            <h2>Общий лист ожидания</h2>
+            ${selectedSlot ? `<span>Дата для рассылки: ${escapeHtml(slotLabel(selectedSlot))}</span>` : ""}
           </div>
           <button
             type="button"
@@ -925,8 +1000,24 @@ function renderDatesTab() {
       </section>
 
       <section class="panel span-2">
-        <h2>Даты</h2>
-        <div class="date-list">${state.slots.map(renderRecruiterSlot).join("")}</div>
+        <div class="panel-head">
+          <h2>Активные даты</h2>
+          <span class="pill ok">${visibleActiveSlots.length}</span>
+        </div>
+        <div class="date-list">${visibleActiveSlots.map(renderRecruiterSlot).join("") || '<div class="empty">Активных дат пока нет</div>'}</div>
+        <details class="archive-panel">
+          <summary>
+            <span>Архив собесов</span>
+            <b>${archivedSlots().length}</b>
+          </summary>
+          <label class="archive-search">
+            Поиск в архиве
+            <input data-archive-search value="${escapeAttr(ui.archiveSearch)}" placeholder="ФИО, Telegram, телефон, дата" />
+          </label>
+          <div class="date-list archive-date-list">
+            ${visibleArchivedSlots.map(renderArchivedSlot).join("") || '<div class="empty">В архиве ничего не найдено</div>'}
+          </div>
+        </details>
       </section>
     </section>
   `;
@@ -946,6 +1037,52 @@ function renderWaitlistCandidate(candidate, index = 0) {
         <div class="candidate-details-body">
           ${renderCandidateMeta(candidate)}
           ${candidate.lastWaitlistNotifiedAt ? `<p class="candidate-note">Последнее уведомление: ${escapeHtml(formatDateTime(candidate.lastWaitlistNotifiedAt))}</p>` : ""}
+        </div>
+      </details>
+      <div class="compact-person-row">
+        ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
+      </div>
+    </article>
+  `;
+}
+
+function renderArchivedSlot(slot) {
+  const candidates = archiveCandidatesForSlot(slot);
+  const query = ui.archiveSearch.trim();
+  const visibleCandidates = query
+    ? candidates.filter((candidate) => candidateMatchesQuery(candidate, query))
+    : candidates;
+
+  return `
+    <details class="archive-slot-card">
+      <summary>
+        <span class="archive-slot-main">
+          <b>${escapeHtml(slotLabel(slot))}</b>
+          <span>${escapeHtml(slot.completedAt ? `Закрыт: ${formatDateTime(slot.completedAt)}` : "Закрыт")}</span>
+        </span>
+        <span class="pill bad">${candidates.length}</span>
+      </summary>
+      <div class="candidate-list compact-candidate-list">
+        ${visibleCandidates.map(renderArchiveCandidate).join("") || '<div class="empty">Кандидатов по поиску нет</div>'}
+      </div>
+    </details>
+  `;
+}
+
+function renderArchiveCandidate(candidate, index = 0) {
+  const telegram = cleanTelegram(candidate.telegram);
+  return `
+    <article class="candidate-card recruiter-candidate-card archive-candidate-card ${candidateCardTone(candidate)}">
+      <details class="recruiter-person-details">
+        <summary class="candidate-name-summary">
+          <span class="candidate-title-line">
+            <span class="candidate-number">${index + 1}</span>
+            <b class="name">${escapeHtml(candidate.name)}</b>
+          </span>
+          ${renderStatusPill(candidate.status)}
+        </summary>
+        <div class="candidate-details-body">
+          ${renderCandidateMeta(candidate)}
         </div>
       </details>
       <div class="compact-person-row">
@@ -1091,17 +1228,47 @@ function renderStatsMap(stats, labelFn) {
 function filterCandidates(candidates) {
   const query = ui.recruiterSearch.trim().toLowerCase();
   if (!query) return candidates;
-  return candidates.filter((candidate) => {
-    return [
-      candidate.name,
-      candidate.telegram,
-      candidate.telegramId,
-      candidate.phone,
-      candidate.source
-    ]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(query));
+  return candidates.filter((candidate) => candidateMatchesQuery(candidate, query));
+}
+
+function filterArchivedSlots(slots) {
+  const query = ui.archiveSearch.trim().toLowerCase();
+  if (!query) return slots;
+  return slots.filter((slot) => {
+    const slotValues = [
+      slot.title,
+      slot.date,
+      slot.time,
+      formatDate(slot.date),
+      slot.venue,
+      slot.venueAddress,
+      slotLabel(slot)
+    ];
+    return (
+      slotValues.filter(Boolean).some((value) => String(value).toLowerCase().includes(query)) ||
+      archiveCandidatesForSlot(slot).some((candidate) => candidateMatchesQuery(candidate, query))
+    );
   });
+}
+
+function archiveCandidatesForSlot(slot) {
+  return state.candidates.filter((candidate) => candidate.interviewSlotId === slot.id);
+}
+
+function candidateMatchesQuery(candidate, query) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  return [
+    candidate.name,
+    candidate.telegram,
+    candidate.telegramId,
+    candidate.phone,
+    candidate.source,
+    stageLabel(candidate),
+    statusLabel(candidate.status)
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedQuery));
 }
 
 function isUnmarkedCandidate(candidate) {
@@ -1145,9 +1312,11 @@ function renderEvent(event) {
 }
 
 function renderSlotOptions() {
-  return state.slots
+  return activeSlots().length
+    ? activeSlots()
     .map((slot) => `<option value="${slot.id}" ${slot.id === ui.selectedSlotId ? "selected" : ""}>${escapeHtml(slotLabel(slot))}</option>`)
-    .join("");
+    .join("")
+    : '<option value="">Нет активных дат</option>';
 }
 
 function renderVenueOptions() {
@@ -1156,6 +1325,20 @@ function renderVenueOptions() {
     .map((venue) => `
       <option value="${escapeAttr(venue.id)}">${escapeHtml([venue.name, venue.address].filter(Boolean).join(" · "))}</option>
     `)
+    .join("");
+}
+
+function renderHourOptions() {
+  return Array.from({ length: 24 }, (_, hour) => {
+    const value = String(hour).padStart(2, "0");
+    const selected = value === "12" ? "selected" : "";
+    return `<option value="${value}" ${selected}>${value}</option>`;
+  }).join("");
+}
+
+function renderMinuteOptions() {
+  return ["00", "15", "30", "45"]
+    .map((value) => `<option value="${value}" ${value === "00" ? "selected" : ""}>${value}</option>`)
     .join("");
 }
 
@@ -1168,35 +1351,104 @@ function renderTab(tab, label) {
 }
 
 function renderStageTrack(candidate) {
-  const stages = [
-    { label: "Запись", icon: "file", done: ["booked", "confirmation_pending", "confirmed", "attended", "registration_pending", "ready_for_internship"].includes(candidate.status) },
-    { label: "Подтв.", icon: "chat", done: candidate.confirmationStatus === "confirmed" },
-    { label: "Собес", icon: "check", done: candidate.attendanceStatus === "arrived" },
-    { label: "Рег.", icon: "send", done: ["instructions_sent", "materials_sent", "pending", "registered"].includes(candidate.registrationStatus) },
-    { label: "Стаж.", icon: "flag", done: candidate.status === "ready_for_internship" }
-  ];
-  const firstOpen = stages.findIndex((stage) => !stage.done);
-  const currentIndex = firstOpen === -1 ? stages.length - 1 : firstOpen;
+  const stages = candidateStages(candidate);
+  const currentIndex = currentStageIndex(candidate, stages);
+  const selectedHelp = stages.find((stage) => stage.key === ui.stageHelpKey) || stages[currentIndex] || stages[0];
 
   return `
     <div class="stage-track five" aria-label="Путь кандидата">
       ${stages
         .map((stage, index) => {
-          const stateClass = stage.done ? "done" : index === currentIndex ? "current" : "";
+          const stateClass = index < currentIndex ? "done" : index === currentIndex ? "current" : "";
           return `
-            <button class="stage-node ${stateClass}" type="button" aria-label="${escapeAttr(stage.label)}">
+            <button
+              class="stage-node ${stateClass}"
+              type="button"
+              data-action="show-stage-help"
+              data-stage-key="${escapeAttr(stage.key)}"
+              aria-label="${escapeAttr(stage.label)}"
+              ${selectedHelp?.key === stage.key ? "aria-pressed=\"true\"" : ""}
+            >
               <span class="stage-dot">${stageIcon(stage.icon)}</span>
+              <span class="stage-caption">${escapeHtml(stage.label)}</span>
             </button>
           `;
         })
         .join("")}
     </div>
+    ${selectedHelp ? `
+      <div class="stage-help">
+        <b>${escapeHtml(selectedHelp.title)}</b>
+        <span>${escapeHtml(selectedHelp.description)}</span>
+      </div>
+    ` : ""}
   `;
+}
+
+function candidateStages(candidate) {
+  const resourceCount = candidate.resourceStepsSent?.length || 0;
+  const resourceTotal = resourceSteps().length || 0;
+  return [
+    {
+      key: "profile",
+      label: "Анкета",
+      title: "Анкета сохранена",
+      description: "ФИО, Telegram и телефон лежат в общем слое кандидатов.",
+      icon: "file"
+    },
+    {
+      key: "booking",
+      label: "Запись",
+      title: candidate.status === "waitlist" ? "Ожидает дату" : "Дата выбрана",
+      description: candidate.status === "waitlist"
+        ? "Кандидат в общем листе ожидания и получит уведомление о новой дате."
+        : "Кандидат записан на конкретную дату собеседования.",
+      icon: "calendar"
+    },
+    {
+      key: "confirmation",
+      label: "Подтв.",
+      title: "Подтверждение участия",
+      description: "За день до собеса кандидат отвечает, придет он или нет.",
+      icon: "chat"
+    },
+    {
+      key: "interview",
+      label: "Собес",
+      title: "Отметка явки",
+      description: "Рекрут отмечает, пришел кандидат на собеседование или нет.",
+      icon: "check"
+    },
+    {
+      key: "resources",
+      label: "Ресурсы",
+      title: resourceCount ? `Ресурсы ${resourceCount}/${resourceTotal}` : "Ресурсы после собеса",
+      description: "Пришедшим отправляются регистрация, группа неаттестованных и оформление самозанятости.",
+      icon: "send"
+    }
+  ];
+}
+
+function currentStageIndex(candidate, stages = candidateStages(candidate)) {
+  if ((candidate.resourceStepsSent?.length || 0) > 0 || ["registration_pending", "registered", "ready_for_internship"].includes(candidate.status)) {
+    return stages.findIndex((stage) => stage.key === "resources");
+  }
+  if (["arrived", "no_show", "declined_before", "no_confirmation"].includes(candidate.attendanceStatus) || ["attended", "left_after_interview", "no_show"].includes(candidate.status)) {
+    return stages.findIndex((stage) => stage.key === "interview");
+  }
+  if (["pending", "confirmed", "declined"].includes(candidate.confirmationStatus)) {
+    return stages.findIndex((stage) => stage.key === "confirmation");
+  }
+  if (candidate.interviewSlotId && candidate.status !== "waitlist") {
+    return stages.findIndex((stage) => stage.key === "booking");
+  }
+  return 0;
 }
 
 function stageIcon(name) {
   const icons = {
     file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
+    calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v4M17 3v4M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2z"/><path d="M8 13h3M8 17h6"/></svg>',
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H8l-3 3V6z"/><path d="M8 10h8M8 13h5"/></svg>',
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>',
     send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4 18-7z"/></svg>',
@@ -1391,10 +1643,12 @@ function statusLabel(status) {
 }
 
 function stageLabel(candidate) {
-  if (candidate.status === "waitlist") return "Ожидание даты";
-  if (["booked", "confirmation_pending", "confirmed"].includes(candidate.status)) return "До собеседования";
-  if (candidate.resourceStepsSent?.length > 0) return "Ресурсы отправлены";
-  if (candidate.status === "attended") return "На собеседовании";
+  if (candidate.resourceStepsSent?.length > 0) return `Ресурсы ${candidate.resourceStepsSent.length}/${resourceSteps().length || 0}`;
+  if (candidate.status === "waitlist") return "В листе ожидания";
+  if (candidate.status === "booked") return "Записан на собеседование";
+  if (candidate.status === "confirmation_pending") return "Ждет подтверждение";
+  if (candidate.status === "confirmed") return "Подтвердил участие";
+  if (candidate.status === "attended") return "Пришел на собес";
   if (candidate.status === "left_after_interview") return "Ушел после собеседования";
   if (candidate.status === "registration_pending") return "Регистрация";
   if (candidate.status === "ready_for_internship") return "Стажировка";
