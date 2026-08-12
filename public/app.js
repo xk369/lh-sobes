@@ -3,8 +3,7 @@ const ui = {
   recruiterTab: "journal",
   candidateId: localStorage.getItem("lh_interviews_candidate_id") || "",
   selectedSlotId: "",
-  recruiterSearch: "",
-  infoBoardCollapsed: localStorage.getItem("lh_interviews_info_collapsed") === "1"
+  recruiterSearch: ""
 };
 
 const app = document.querySelector("#app");
@@ -131,14 +130,12 @@ document.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "send-resources") {
-      const payload = button.dataset.candidateId
-        ? { candidateId: button.dataset.candidateId }
-        : ui.role === "candidate"
-          ? { candidateId: requireCurrentCandidateId() }
-          : { slotId: button.dataset.slotId || ui.selectedSlotId || undefined };
-      await runCommand("send_resources", payload);
-      showToast("Ресурсы отправлены");
+    if (action === "send-resource-step" || action === "send-resources") {
+      const response = await runCommand("send_resource_step", {
+        slotId: button.dataset.slotId || ui.selectedSlotId || undefined,
+        resourceType: button.dataset.resourceType || undefined
+      });
+      showToast(response.result.resourceLabel ? `${response.result.resourceLabel}: отправлено ${response.result.sentCount}` : "Все ресурсы уже отправлены");
       return;
     }
 
@@ -229,16 +226,6 @@ document.addEventListener("change", (event) => {
     render();
   }
 });
-
-document.addEventListener(
-  "toggle",
-  (event) => {
-    if (!event.target.matches("[data-info-board]")) return;
-    ui.infoBoardCollapsed = !event.target.open;
-    localStorage.setItem("lh_interviews_info_collapsed", ui.infoBoardCollapsed ? "1" : "0");
-  },
-  true
-);
 
 document.addEventListener("input", (event) => {
   if (event.target.matches("[data-candidate-search]")) {
@@ -419,6 +406,7 @@ function renderCandidateSlot(slot) {
         <div>
           <div class="slot-title">${escapeHtml(slot.title)}</div>
           <div class="meta">${escapeHtml(slot.time)} · ${escapeHtml(slot.venue)}</div>
+          ${slot.venueAddress ? `<div class="meta">${escapeHtml(slot.venueAddress)}</div>` : ""}
         </div>
         <span class="pill ${slot.availableSeats > 0 ? "ok" : "bad"}">${slot.availableSeats} мест</span>
       </div>
@@ -426,7 +414,7 @@ function renderCandidateSlot(slot) {
         <div class="date-mark">${escapeHtml(dayNumber(slot.date))}</div>
         <div>
           <b>${escapeHtml(formatDate(slot.date))}</b>
-          <span>${escapeHtml(slot.time)} · ${escapeHtml(slot.venue)}</span>
+          <span>${escapeHtml([slot.time, slot.venue, slot.venueAddress].filter(Boolean).join(" · "))}</span>
         </div>
       </div>
       <button type="button" class="primary" data-action="book-slot" data-slot-id="${escapeAttr(slot.id)}" ${slot.availableSeats < 1 ? "disabled aria-disabled=\"true\"" : ""}>
@@ -505,12 +493,12 @@ function renderCandidateStatus(candidate) {
 }
 
 function renderCandidateRegistration(candidate) {
+  const links = resourceLinksForCandidate(candidate);
   const shouldShow =
-    Boolean(candidate.resourcesSentAt || candidate.materialsSentAt) ||
+    links.length > 0 ||
     ["registration_pending", "registered", "ready_for_internship"].includes(candidate.status);
   if (!shouldShow) return "";
 
-  const links = state.settings?.registrationLinks || [];
   return `
     <section class="panel">
       <div class="panel-head">
@@ -518,13 +506,11 @@ function renderCandidateRegistration(candidate) {
         ${renderRegistrationPill(candidate.registrationStatus)}
       </div>
       <div class="notice">
-        <b>Рекрут отправил ссылки LOFT HALL.</b><br>
-        Переходы по ссылкам можно зафиксировать здесь, регистрацию дальше проверит рекрут.
+        <b>Рекрут отправил ссылки LOFT HALL.</b>
       </div>
       <div class="link-grid">
-        ${links.map((link) => renderRegistrationLink(link, candidate)).join("")}
+        ${links.map((link) => renderRegistrationLink(link, candidate)).join("") || '<div class="empty">Ресурсы пока не отправлены</div>'}
       </div>
-      <button type="button" class="secondary" data-action="send-resources">Отправить ресурсы повторно</button>
     </section>
   `;
 }
@@ -570,24 +556,6 @@ function renderLossReasonSurvey(candidate) {
 function renderRecruiterView() {
   return `
     <section class="recruiter-grid">
-      <details class="panel info-panel" data-info-board ${ui.infoBoardCollapsed ? "" : "open"}>
-        <summary class="info-summary">
-          <span>Информационное табло</span>
-          <span class="info-toggle" aria-hidden="true"></span>
-        </summary>
-        <section class="stats" aria-label="Статистика собеседований">
-          ${renderStat(state.stats.waitlistCount, "ожидание")}
-          ${renderStat(state.stats.bookedTotal, "записаны")}
-          ${renderStat(state.stats.confirmedTotal, "подтвердили")}
-          ${renderStat(state.stats.arrivedTotal, "пришли")}
-          ${renderStat(state.stats.noShowTotal, "не пришли")}
-          ${renderStat(state.stats.resourcesSentTotal, "ресурсы")}
-        </section>
-        <div class="info-actions">
-          <button type="button" class="quiet danger-tool" data-action="reset-demo">Сбросить демо</button>
-        </div>
-      </details>
-
       <nav class="recruiter-nav" aria-label="Разделы рекрута">
         <button type="button" class="secondary" data-role="candidate">К форме записи</button>
         ${renderTab("journal", "Журнал")}
@@ -609,10 +577,12 @@ function renderRecruiterTab() {
 }
 
 function renderJournalTab() {
-  const candidates = filterCandidates(state.candidates.filter((candidate) => candidate.interviewSlotId === ui.selectedSlotId));
+  const slotCandidates = state.candidates.filter((candidate) => candidate.interviewSlotId === ui.selectedSlotId);
+  const candidates = filterCandidates(slotCandidates);
   const slot = state.slots.find((item) => item.id === ui.selectedSlotId);
   const unmarked = candidates.filter(isUnmarkedCandidate);
   const arrived = candidates.filter(isArrivedCandidate);
+  const arrivedAll = slotCandidates.filter(isArrivedCandidate);
   const missed = candidates.filter(isMissedCandidate);
 
   return `
@@ -627,10 +597,9 @@ function renderJournalTab() {
           <input data-candidate-search value="${escapeAttr(ui.recruiterSearch)}" placeholder="ФИО, Telegram, телефон" />
         </label>
         <button type="button" class="secondary" data-action="send-due-confirmations" data-slot-id="${escapeAttr(ui.selectedSlotId)}">Подтверждение за день</button>
-        <button type="button" class="primary" data-action="send-resources" data-slot-id="${escapeAttr(ui.selectedSlotId)}">Ресурсы пришедшим</button>
-        <button type="button" class="success" data-action="complete-slot" data-slot-id="${escapeAttr(ui.selectedSlotId)}">Собес завершен</button>
       </div>
       ${renderJournalGroup("Не отмечены", unmarked, "wait")}
+      ${renderSlotResourceControls(slot, arrivedAll)}
       ${renderJournalGroup("Пришли на собес", arrived, "ok")}
       ${renderJournalGroup("Не пришли / отказ", missed, "bad")}
     </section>
@@ -648,6 +617,78 @@ function renderJournalGroup(title, candidates, tone) {
         ${candidates.map(renderRecruiterCandidate).join("") || '<div class="empty">Пусто</div>'}
       </div>
     </section>
+  `;
+}
+
+function renderSlotResourceControls(slot, candidates) {
+  if (!slot) return "";
+  const progress = resourceProgressForCandidates(candidates);
+  const nextStep = progress.nextStep;
+  const disabled = candidates.length === 0 || !nextStep;
+
+  return `
+    <section class="resource-progress-panel">
+      <div class="resource-progress-head">
+        <div>
+          <h3>Ресурсы пришедшим</h3>
+          <span>${candidates.length ? `Пришедших: ${candidates.length}` : "Пришедших пока нет"}</span>
+        </div>
+        <span class="pill accent">${progress.sent}/${progress.total} отправлено</span>
+      </div>
+      <button
+        type="button"
+        class="${nextStep ? "primary" : "success"}"
+        data-action="send-resource-step"
+        data-slot-id="${escapeAttr(slot.id)}"
+        data-resource-type="${escapeAttr(nextStep?.type || "")}"
+        ${disabled ? "disabled aria-disabled=\"true\"" : ""}
+      >
+        ${nextStep ? `Отправить: ${nextStep.label}` : "Все ресурсы отправлены"}
+      </button>
+    </section>
+  `;
+}
+
+function resourceProgressForCandidates(candidates) {
+  const targets = candidates.filter((candidate) => candidate.attendanceStatus === "arrived" && candidate.status !== "left_after_interview");
+  const steps = resourceSteps();
+  const doneTypes = new Set(
+    steps
+      .filter((step) => targets.length > 0 && targets.every((candidate) => resourceStepSent(candidate, step.type)))
+      .map((step) => step.type)
+  );
+  const nextStep = steps.find((step) => !doneTypes.has(step.type)) || null;
+
+  return {
+    steps,
+    doneTypes,
+    nextStep,
+    sent: doneTypes.size,
+    total: steps.length
+  };
+}
+
+function resourceLinksForCandidate(candidate) {
+  const sentTypes = new Set((candidate.resourceStepsSent || []).map((step) => step.type));
+  return resourceSteps().filter((step) => sentTypes.has(step.type));
+}
+
+function resourceSteps() {
+  const steps = state.settings?.resourceSteps?.length ? state.settings.resourceSteps : state.settings?.registrationLinks || [];
+  return steps.filter((step) => step.type && step.label);
+}
+
+function resourceStepSent(candidate, type) {
+  return (candidate.resourceStepsSent || []).some((step) => step.type === type);
+}
+
+function renderCandidateResourceExceptions(candidate) {
+  const errors = candidate.resourceErrors || [];
+  if (!errors.length) return "";
+  return `
+    <div class="resource-exceptions">
+      ${errors.map((error) => `<span class="pill bad">${escapeHtml(error.message)}</span>`).join("")}
+    </div>
   `;
 }
 
@@ -678,12 +719,10 @@ function renderRecruiterCandidate(candidate, index = 0) {
       </div>
       <div class="compact-person-row">
         ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
-        ${renderStatusPill(candidate.status, journalStatusLabel(candidate), true)}
-        ${candidate.resourcesSentAt || candidate.materialsSentAt ? '<span class="pill ok">ресурсы отправлены</span>' : ""}
       </div>
+      ${renderCandidateResourceExceptions(candidate)}
       ${canContinue ? `
         <div class="candidate-actions">
-          <button type="button" class="secondary" data-action="send-resources" data-candidate-id="${escapeAttr(candidate.id)}">Ресурсы</button>
           <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Ушел после собеса</button>
         </div>
       ` : ""}
@@ -708,24 +747,21 @@ function renderDatesTab() {
             <input name="time" type="time" required />
           </label>
           <label>
-            Площадка или зал
-            <input name="venue" value="LOFT HALL" required />
+            Площадка
+            <select name="venueId" required>${renderVenueOptions()}</select>
           </label>
           <label>
             Мест
             <input name="seats" type="number" min="1" value="12" required />
           </label>
-          <label>
-            Рекрут
-            <input name="recruiter" value="Рекрут" />
-          </label>
-          <label>
-            Название
-            <input name="title" value="Собеседование LOFT HALL" />
+          <div class="form-subhead span-2">Материалы после подтверждения</div>
+          <label class="span-2">
+            Текст
+            <textarea name="confirmationText" placeholder="Короткая инструкция, которую кандидат получит после подтверждения"></textarea>
           </label>
           <label class="span-2">
-            Заметка
-            <textarea name="note"></textarea>
+            Видео
+            <input name="confirmationVideoUrl" placeholder="https://..." />
           </label>
           <div class="span-2 button-row">
             <button type="submit" class="primary">Создать и уведомить ожидание</button>
@@ -773,28 +809,29 @@ function renderRecruiterSlot(slot) {
       <div class="date-head">
         <div>
           <div class="slot-title">${escapeHtml(slotLabel(slot))}</div>
+          ${slot.venueAddress ? `<div class="meta">${escapeHtml(slot.venueAddress)}</div>` : ""}
         </div>
         <span class="pill ${slot.status === "open" ? "ok" : "bad"}">${escapeHtml(slot.status === "completed" ? "Завершена" : slot.status === "open" ? "Открыта" : "Закрыта")}</span>
       </div>
       <div class="candidate-actions">
         <button type="button" class="secondary" data-action="request-confirmation" data-slot-id="${escapeAttr(slot.id)}">Подтверждение</button>
         <button type="button" class="secondary" data-action="notify-waitlist" data-slot-id="${escapeAttr(slot.id)}">Ожидание</button>
-        <button type="button" class="primary" data-action="send-resources" data-slot-id="${escapeAttr(slot.id)}">Ресурсы пришедшим</button>
-        <button type="button" class="success" data-action="complete-slot" data-slot-id="${escapeAttr(slot.id)}">Собес завершен</button>
       </div>
     </article>
   `;
 }
 
 function renderRegistrationTab() {
+  const slotCandidates = state.candidates.filter((candidate) => !ui.selectedSlotId || candidate.interviewSlotId === ui.selectedSlotId);
   const candidates = filterCandidates(
-    state.candidates.filter(
+    slotCandidates.filter(
       (candidate) =>
-        (!ui.selectedSlotId || candidate.interviewSlotId === ui.selectedSlotId) &&
         candidate.status !== "left_after_interview" &&
-        (candidate.attendanceStatus === "arrived" || candidate.resourcesSentAt || candidate.materialsSentAt)
+        (candidate.attendanceStatus === "arrived" || candidate.resourceStepsSent?.length > 0)
     )
   );
+  const slot = state.slots.find((item) => item.id === ui.selectedSlotId);
+  const arrivedAll = slotCandidates.filter(isArrivedCandidate);
 
   return `
     <section class="panel">
@@ -807,8 +844,8 @@ function renderRegistrationTab() {
           Поиск
           <input data-candidate-search value="${escapeAttr(ui.recruiterSearch)}" placeholder="ФИО, Telegram, телефон" />
         </label>
-        <button type="button" class="primary" data-action="send-resources" data-slot-id="${escapeAttr(ui.selectedSlotId)}">Отправить ресурсы пришедшим</button>
       </div>
+      ${renderSlotResourceControls(slot, arrivedAll)}
       <div class="candidate-list">
         ${candidates.map(renderResourceCandidate).join("") || '<div class="empty">Пришедших кандидатов пока нет</div>'}
       </div>
@@ -833,20 +870,9 @@ function renderResourceCandidate(candidate, index = 0) {
       </details>
       <div class="compact-person-row">
         ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
-        ${renderStatusPill(candidate.status, candidate.resourcesSentAt || candidate.materialsSentAt ? "Ресурсы отправлены" : journalStatusLabel(candidate), true)}
       </div>
-      <div class="candidate-info-grid">
-        <div class="candidate-info-item">
-          <span>Ресурсы</span>
-          <b>${escapeHtml(candidate.resourcesSentAt || candidate.materialsSentAt ? formatDateTime(candidate.resourcesSentAt || candidate.materialsSentAt) : "не отправлены")}</b>
-        </div>
-        <div class="candidate-info-item">
-          <span>Переходы</span>
-          <b>${candidate.linkClicks?.length || 0}/${state.settings?.registrationLinks?.length || 3}</b>
-        </div>
-      </div>
+      ${renderCandidateResourceExceptions(candidate)}
       <div class="candidate-actions">
-        <button type="button" class="primary" data-action="send-resources" data-candidate-id="${escapeAttr(candidate.id)}">Ресурсы</button>
         <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Ушел после собеса</button>
         <button type="button" class="quiet" data-action="use-candidate" data-candidate-id="${escapeAttr(candidate.id)}">Открыть</button>
       </div>
@@ -961,8 +987,13 @@ function renderSlotOptions() {
     .join("");
 }
 
-function renderStat(value, label) {
-  return `<div class="stat"><b>${Number(value || 0)}</b><span>${escapeHtml(label)}</span></div>`;
+function renderVenueOptions() {
+  const venues = state.settings?.interviewVenues || [];
+  return venues
+    .map((venue) => `
+      <option value="${escapeAttr(venue.id)}">${escapeHtml([venue.name, venue.address].filter(Boolean).join(" · "))}</option>
+    `)
+    .join("");
 }
 
 function renderStep(label, done) {
@@ -1037,7 +1068,7 @@ function renderCandidateMeta(candidate) {
       </div>
       <div class="candidate-info-item">
         <span>Ресурсы</span>
-        <b>${escapeHtml(candidate.resourcesSentAt || candidate.materialsSentAt ? "отправлены" : "не отправлены")}</b>
+        <b>${escapeHtml(`${candidate.resourceStepsSent?.length || 0}/${resourceSteps().length || 0} отправлено`)}</b>
       </div>
     </div>
   `;
@@ -1199,7 +1230,7 @@ function statusLabel(status) {
 function stageLabel(candidate) {
   if (candidate.status === "waitlist") return "Ожидание даты";
   if (["booked", "confirmation_pending", "confirmed"].includes(candidate.status)) return "До собеседования";
-  if (candidate.resourcesSentAt || candidate.materialsSentAt) return "Ресурсы отправлены";
+  if (candidate.resourceStepsSent?.length > 0) return "Ресурсы отправлены";
   if (candidate.status === "attended") return "На собеседовании";
   if (candidate.status === "left_after_interview") return "Ушел после собеседования";
   if (candidate.status === "registration_pending") return "Регистрация";
@@ -1230,7 +1261,6 @@ function candidateLayerLabel(candidate) {
 
 function journalStatusLabel(candidate) {
   if (candidate.status === "left_after_interview") return "Ушел после собеса";
-  if (candidate.resourcesSentAt || candidate.materialsSentAt) return "Ресурсы отправлены";
   if (candidate.attendanceStatus === "arrived" && candidate.confirmationStatus === "confirmed") return "Подтвердил и пришел";
   if (candidate.attendanceStatus === "no_show" && candidate.confirmationStatus === "confirmed") return "Подтвердил, но не пришел";
   if (candidate.attendanceStatus === "declined_before" || candidate.confirmationStatus === "declined") return "Заранее отказался";
@@ -1286,7 +1316,8 @@ function eventTypeLabel(type) {
     attendance_marked: "Журнал явки",
     interview_result_set: "Итог собеса",
     resources_sent: "Ресурсы отправлены",
-    slot_completed: "Собес завершен",
+    resource_step_sent: "Ресурс отправлен",
+    slot_completed: "Дата закрыта",
     candidate_left_after_interview: "Ушел после собеса",
     registration_materials_sent: "Материалы регистрации",
     registration_marked: "Регистрация",

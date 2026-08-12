@@ -15,16 +15,19 @@ test("new interview date automatically notifies waitlist candidates", () => {
       payload: {
         date: "2026-08-20",
         time: "13:00",
-        venue: "LOFT #10",
-        seats: 8,
-        title: "Собеседование LOFT #10"
+        venueId: "loft3",
+        seats: 8
       }
     },
     { now: "2026-08-10T10:00:00.000Z" }
   );
 
   state = result.state;
+  const slot = state.slots.find((item) => item.id === result.result.slotId);
   assert.equal(result.result.notifiedCount, waitlistBefore);
+  assert.equal(slot.title, "Собеседование LOFT HALL");
+  assert.equal(slot.venue, "LOFT#3");
+  assert.equal(slot.venueAddress, "ул. Ленинская Слобода, 26с15");
 
   const waitlistCandidate = state.candidates.find((candidate) => candidate.id === "cand-003");
   assert.equal(waitlistCandidate.waitlistTargetSlotId, result.result.slotId);
@@ -138,7 +141,7 @@ test("arrived candidate receives resources without interview result buttons", ()
   ));
   ({ state } = applyInterviewCommand(
     state,
-    { action: "send_resources", payload: { candidateId: candidate.id } },
+    { action: "send_resource_step", payload: { slotId: "slot-002" } },
     { now: "2026-08-13T12:30:00.000Z" }
   ));
 
@@ -146,11 +149,25 @@ test("arrived candidate receives resources without interview result buttons", ()
   assert.equal(withResources.status, "attended");
   assert.equal(withResources.registrationStatus, "materials_sent");
   assert.ok(withResources.resourcesSentAt);
-  assert.ok(state.notifications.some((item) => item.candidateId === candidate.id && item.type === "resources"));
+  assert.equal(withResources.resourceStepsSent.length, 1);
+  assert.equal(withResources.resourceStepsSent[0].type, "registration_bot");
+  assert.ok(
+    state.notifications.some((item) => item.candidateId === candidate.id && item.type === "resource_registration_bot")
+  );
 
   ({ state } = applyInterviewCommand(
     state,
-    { action: "record_link_click", payload: { candidateId: candidate.id, linkType: "helper_bot" } },
+    { action: "send_resource_step", payload: { slotId: "slot-002" } },
+    { now: "2026-08-13T12:35:00.000Z" }
+  ));
+
+  const withSecondResource = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(withSecondResource.resourceStepsSent.length, 2);
+  assert.equal(withSecondResource.resourceStepsSent[1].type, "unattested_group");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "record_link_click", payload: { candidateId: candidate.id, linkType: "registration_bot" } },
     { now: "2026-08-13T12:37:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).linkClicks.length, 1);

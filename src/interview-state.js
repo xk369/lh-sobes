@@ -31,33 +31,37 @@ export const lossReasonLabels = {
 
 export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
   return deriveState({
-    schemaVersion: 2,
+    schemaVersion: 3,
     version: 1,
     updatedAt: now,
     settings: defaultSettings(),
     slots: [
       {
         id: "slot-001",
-        title: "Собеседование LOFT #8",
+        title: "Собеседование LOFT HALL",
         date: "2026-08-13",
         time: "12:00",
-        venue: "LOFT #8",
+        venueId: "loft2",
+        venue: "LOFT#2",
+        venueAddress: "ул. Ленинская Слобода, 26с11",
         seats: 12,
         status: "open",
-        recruiter: "Анастасия",
-        note: "Основной поток кандидатов на стажировку",
+        confirmationText: "После подтверждения пришлем короткую инструкцию по входу и встрече на площадке.",
+        confirmationVideoUrl: "",
         createdAt: now
       },
       {
         id: "slot-002",
-        title: "Собеседование LOFT #4",
+        title: "Собеседование LOFT HALL",
         date: "2026-08-16",
         time: "15:30",
+        venueId: "loft4",
         venue: "LOFT #4",
+        venueAddress: "2-й Кожуховский проезд, 29к6",
         seats: 10,
         status: "open",
-        recruiter: "Дежурный рекрут",
-        note: "Резервная дата для листа ожидания",
+        confirmationText: "После подтверждения пришлем короткую инструкцию по входу и встрече на площадке.",
+        confirmationVideoUrl: "",
         createdAt: now
       }
     ],
@@ -98,6 +102,7 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
           registrationStatus: "materials_sent",
           materialsSentAt: now,
           resourcesSentAt: now,
+          resourceStepsSent: [{ type: "registration_bot", sentAt: now }],
           internshipStage: "candidate_resources_sent"
         },
         now
@@ -137,9 +142,9 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
       {
         id: "notif-001",
         candidateId: "cand-002",
-        type: "resources",
-        title: "Ресурсы LOFT HALL",
-        message: "Отправлены ссылки на группу неаттестованных, Helper Bot и рабочий бот.",
+        type: "resource_registration_bot",
+        title: "Ресурс LOFT HALL: бот регистрации",
+        message: "Отправлена первая ссылка для регистрации в основной базе.",
         status: "sent",
         channel: "telegram_mock",
         createdAt: now,
@@ -160,15 +165,15 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
 
 export function deriveState(input) {
   const state = clone(input || {});
-  state.schemaVersion = Number(state.schemaVersion || 2);
+  state.schemaVersion = Number(state.schemaVersion || 3);
   state.version = Number(state.version || 1);
-  state.settings = { ...defaultSettings(), ...(state.settings || {}) };
+  state.settings = normalizeSettings(state.settings);
   state.slots = Array.isArray(state.slots) ? state.slots : [];
   state.candidates = Array.isArray(state.candidates) ? state.candidates.map(normalizeCandidate) : [];
   state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
   state.events = Array.isArray(state.events) ? state.events : [];
 
-  state.slots = state.slots.map((slot) => deriveSlot(slot, state.candidates));
+  state.slots = state.slots.map((slot) => deriveSlot(slot, state.candidates, state.settings));
   state.stats = deriveStats(state);
   state.reasonStats = countBy(Object.keys(resultLabels), state.candidates, "interviewResult");
   state.lossReasonStats = countBy(Object.keys(lossReasonLabels), state.candidates, "lossReason");
@@ -204,7 +209,7 @@ export function applyInterviewCommand(input, command, options = {}) {
       applyBooking(candidate, slot.id, now);
       appendNotification(state, candidate.id, "booking_created", now, {
         title: "Вы записаны на собеседование",
-        message: `${slot.date} в ${slot.time}, ${slot.venue}. За день до собеседования придет запрос подтверждения.`,
+        message: `${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. За день до собеседования придет запрос подтверждения.`,
         slotId: slot.id
       });
       appendEvent(state, "candidate_booked_slot", actor, now, { candidateId: candidate.id, slotId: slot.id });
@@ -234,16 +239,19 @@ export function applyInterviewCommand(input, command, options = {}) {
     }
 
     case "create_slot": {
+      const venue = resolveInterviewVenue(state.settings, payload);
       const slot = {
         id: payload.id || nextId("slot", state.slots),
-        title: clean(payload.title) || "Собеседование LOFT HALL",
+        title: "Собеседование LOFT HALL",
         date: requireText(payload.date, "Slot date is required"),
         time: requireText(payload.time, "Slot time is required"),
-        venue: clean(payload.venue) || "LOFT HALL",
+        venueId: venue.id,
+        venue: venue.name,
+        venueAddress: venue.address,
         seats: Math.max(Number(payload.seats || 1), 1),
         status: payload.status === "closed" ? "closed" : "open",
-        recruiter: clean(payload.recruiter) || "Рекрут",
-        note: clean(payload.note),
+        confirmationText: clean(payload.confirmationText) || defaultConfirmationText(venue),
+        confirmationVideoUrl: clean(payload.confirmationVideoUrl),
         createdAt: now
       };
       state.slots.push(slot);
@@ -278,7 +286,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         appendNotification(state, candidate.id, "confirmation_request", now, {
           title: "Подтвердите участие",
           message: slot
-            ? `Собеседование ${slot.date} в ${slot.time}, ${slot.venue}. Выберите: да, приду или нет, не смогу.`
+            ? `Собеседование ${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. Выберите: да, приду или нет, не смогу.`
             : "Подтвердите участие в собеседовании.",
           slotId: candidate.interviewSlotId
         });
@@ -299,6 +307,14 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.candidateLayerStatus = "interview_confirmed";
         candidate.confirmationStatus = "confirmed";
         candidate.confirmedAt = now;
+        const slot = candidate.interviewSlotId ? requireSlot(state, candidate.interviewSlotId) : null;
+        if (slot && (slot.confirmationText || slot.confirmationVideoUrl)) {
+          appendNotification(state, candidate.id, "confirmation_materials", now, {
+            title: "Инструкция перед собеседованием",
+            message: confirmationMaterialsMessage(slot),
+            slotId: slot.id
+          });
+        }
       } else {
         candidate.status = "declined_before_interview";
         candidate.candidateLayerStatus = "interview_declined_before";
@@ -416,28 +432,42 @@ export function applyInterviewCommand(input, command, options = {}) {
       break;
     }
 
+    case "send_resource_step":
     case "send_resources": {
       const targets = payload.candidateId ? [requireCandidate(state, payload.candidateId)] : resourceTargets(state, payload.slotId);
+      const resourceStep = selectResourceStep(state, payload.resourceType, targets);
+      if (!resourceStep) {
+        result = { sentCount: 0, completed: true };
+        break;
+      }
+
+      let sentCount = 0;
       for (const candidate of targets) {
         if (candidate.attendanceStatus !== "arrived") continue;
+        candidate.resourceStepsSent = Array.isArray(candidate.resourceStepsSent) ? candidate.resourceStepsSent : [];
+        if (hasResourceStep(candidate, resourceStep.type)) continue;
+        candidate.resourceStepsSent.push({ type: resourceStep.type, sentAt: now });
+        sentCount += 1;
         candidate.registrationStatus = "materials_sent";
         candidate.materialsSentAt = now;
-        candidate.resourcesSentAt = now;
+        candidate.resourcesSentAt = candidate.resourcesSentAt || now;
         candidate.candidateLayerStatus = "resources_sent";
         candidate.internshipStage = "candidate_resources_sent";
         touch(candidate, now);
-        appendNotification(state, candidate.id, "resources", now, {
-          title: "Ресурсы LOFT HALL",
-          message: "Отправлены ссылки на группу неаттестованных, Helper Bot и рабочий бот.",
+        appendNotification(state, candidate.id, `resource_${resourceStep.type}`, now, {
+          title: `Ресурс LOFT HALL: ${resourceStep.label}`,
+          message: `${resourceStep.description}. ${resourceStep.url}`,
           slotId: candidate.interviewSlotId
         });
       }
-      appendEvent(state, "resources_sent", actor, now, {
+      appendEvent(state, "resource_step_sent", actor, now, {
         slotId: payload.slotId || null,
         candidateId: payload.candidateId || null,
-        sentCount: targets.length
+        resourceType: resourceStep.type,
+        resourceLabel: resourceStep.label,
+        sentCount
       });
-      result = { sentCount: targets.length };
+      result = { resourceType: resourceStep.type, resourceLabel: resourceStep.label, sentCount };
       break;
     }
 
@@ -574,27 +604,154 @@ export function applyInterviewCommand(input, command, options = {}) {
 function defaultSettings() {
   return {
     autoMaterialDelayMinutes: 5,
-    registrationLinks: [
+    interviewVenues: [
       {
-        type: "unattested_group",
-        label: "Группа неаттестованных",
-        description: "Канал для сотрудников до аттестации",
-        url: "https://t.me/loft_hall_unattested"
+        id: "loft2",
+        name: "LOFT#2",
+        address: "ул. Ленинская Слобода, 26с11"
       },
       {
-        type: "helper_bot",
-        label: "Helper Bot",
-        description: "Основной бот с материалами и регистрацией",
+        id: "loft3",
+        name: "LOFT#3",
+        address: "ул. Ленинская Слобода, 26с15"
+      },
+      {
+        id: "loft4",
+        name: "LOFT#4",
+        address: "2-й Кожуховский проезд, 29к6"
+      }
+    ],
+    resourceSteps: [
+      {
+        type: "registration_bot",
+        label: "Бот регистрации",
+        description: "Ссылка на регистрацию в основной базе",
         url: "https://t.me/loft_helper_bot"
       },
       {
-        type: "work_bot",
-        label: "Рабочий бот",
-        description: "Бот для смен и дальнейшего взаимодействия",
-        url: "https://t.me/loft_work_bot"
+        type: "unattested_group",
+        label: "Группа неаттестованных",
+        description: "Группа для сотрудников до аттестации",
+        url: "https://t.me/loft_hall_unattested"
+      }
+    ],
+    registrationLinks: [
+      {
+        type: "registration_bot",
+        label: "Бот регистрации",
+        description: "Ссылка на регистрацию в основной базе",
+        url: "https://t.me/loft_helper_bot"
+      },
+      {
+        type: "unattested_group",
+        label: "Группа неаттестованных",
+        description: "Группа для сотрудников до аттестации",
+        url: "https://t.me/loft_hall_unattested"
       }
     ]
   };
+}
+
+function normalizeSettings(settings = {}) {
+  const defaults = defaultSettings();
+  const resourceSteps = Array.isArray(settings.resourceSteps) && settings.resourceSteps.length
+    ? settings.resourceSteps
+    : defaults.resourceSteps;
+  const interviewVenues = Array.isArray(settings.interviewVenues) && settings.interviewVenues.length
+    ? settings.interviewVenues
+    : defaults.interviewVenues;
+
+  return {
+    ...defaults,
+    ...settings,
+    interviewVenues: interviewVenues.map(normalizeVenue),
+    resourceSteps: resourceSteps.map(normalizeResourceStep),
+    registrationLinks: Array.isArray(settings.registrationLinks) && settings.registrationLinks.length
+      ? settings.registrationLinks.map(normalizeResourceStep)
+      : resourceSteps.map(normalizeResourceStep)
+  };
+}
+
+function normalizeVenue(venue = {}) {
+  return {
+    id: clean(venue.id),
+    name: clean(venue.name || venue.venue || "LOFT HALL"),
+    address: clean(venue.address)
+  };
+}
+
+function normalizeResourceStep(step = {}) {
+  return {
+    type: clean(step.type || step.id || "resource"),
+    label: clean(step.label || step.name || "Ресурс"),
+    description: clean(step.description || "Ссылка LOFT HALL"),
+    url: clean(step.url)
+  };
+}
+
+function normalizeResourceStepsSent(candidate = {}) {
+  if (Array.isArray(candidate.resourceStepsSent)) {
+    return candidate.resourceStepsSent
+      .map((step) => ({ type: clean(step.type), sentAt: step.sentAt || candidate.resourcesSentAt || candidate.materialsSentAt || "" }))
+      .filter((step) => step.type);
+  }
+
+  if (candidate.resourcesSentAt || candidate.materialsSentAt) {
+    return [{ type: "registration_bot", sentAt: candidate.resourcesSentAt || candidate.materialsSentAt }];
+  }
+
+  return [];
+}
+
+function normalizeResourceErrors(candidate = {}) {
+  return Array.isArray(candidate.resourceErrors)
+    ? candidate.resourceErrors
+        .map((error) => ({
+          type: clean(error.type),
+          message: clean(error.message || "Не удалось отправить")
+        }))
+        .filter((error) => error.type)
+    : [];
+}
+
+function resolveInterviewVenue(settings, payload = {}) {
+  const rawVenue = clean(payload.venueId || payload.venue);
+  const fromSettings = resolveVenueReference(settings, rawVenue);
+  if (fromSettings.id || fromSettings.name !== rawVenue) {
+    return fromSettings;
+  }
+
+  return {
+    id: clean(payload.venueId),
+    name: clean(payload.venue) || "LOFT HALL",
+    address: clean(payload.venueAddress)
+  };
+}
+
+function resolveVenueReference(settings, value) {
+  const venues = Array.isArray(settings?.interviewVenues) ? settings.interviewVenues : defaultSettings().interviewVenues;
+  const normalizedValue = normalizeVenueKey(value);
+  const venue = venues.find((item) => item.id === value || normalizeVenueKey(item.name) === normalizedValue);
+  if (venue) return normalizeVenue(venue);
+  return { id: "", name: clean(value) || "LOFT HALL", address: "" };
+}
+
+function defaultConfirmationText(venue = {}) {
+  const place = [venue.name, venue.address].filter(Boolean).join(", ");
+  return place
+    ? `Ждем вас на собеседовании: ${place}. После подтверждения отправим дополнительные материалы.`
+    : "После подтверждения отправим дополнительные материалы по собеседованию.";
+}
+
+function slotPlaceLine(slot = {}) {
+  return [slot.venue, slot.venueAddress].filter(Boolean).join(", ") || "LOFT HALL";
+}
+
+function confirmationMaterialsMessage(slot = {}) {
+  const lines = [];
+  if (slot.confirmationText) lines.push(slot.confirmationText);
+  if (slot.confirmationVideoUrl) lines.push(`Видео: ${slot.confirmationVideoUrl}`);
+  return lines.join(" ");
 }
 
 function createCandidate(payload, now) {
@@ -618,6 +775,8 @@ function createCandidate(payload, now) {
     materialsSentAt: payload.materialsSentAt || null,
     materialsAvailableAt: payload.materialsAvailableAt || null,
     resourcesSentAt: payload.resourcesSentAt || null,
+    resourceStepsSent: normalizeResourceStepsSent(payload),
+    resourceErrors: normalizeResourceErrors(payload),
     leftAfterInterviewAt: payload.leftAfterInterviewAt || null,
     internshipStage: payload.internshipStage || "candidate_layer",
     lossReason: payload.lossReason || "",
@@ -658,6 +817,8 @@ function normalizeCandidate(candidate) {
     materialsAvailableAt: candidate.materialsAvailableAt || null,
     materialsSentAt: candidate.materialsSentAt || null,
     resourcesSentAt: candidate.resourcesSentAt || null,
+    resourceStepsSent: normalizeResourceStepsSent(candidate),
+    resourceErrors: normalizeResourceErrors(candidate),
     leftAfterInterviewAt: candidate.leftAfterInterviewAt || null,
     internshipStage: candidate.internshipStage || "candidate_layer",
     lossReason: clean(candidate.lossReason),
@@ -669,8 +830,9 @@ function normalizeCandidate(candidate) {
   };
 }
 
-function deriveSlot(slot, candidates) {
+function deriveSlot(slot, candidates, settings = defaultSettings()) {
   const bySlot = candidates.filter((candidate) => candidate.interviewSlotId === slot.id);
+  const venue = resolveVenueReference(settings, slot.venueId || slot.venue);
   const bookedCount = bySlot.filter((candidate) => SLOT_HOLDING_STATUSES.has(candidate.status)).length;
   const confirmedCount = bySlot.filter((candidate) => candidate.confirmationStatus === "confirmed").length;
   const confirmationPendingCount = bySlot.filter((candidate) => candidate.confirmationStatus === "pending").length;
@@ -680,10 +842,16 @@ function deriveSlot(slot, candidates) {
   const noShowCount = bySlot.filter((candidate) => candidate.attendanceStatus === "no_show").length;
   const passedCount = bySlot.filter((candidate) => candidate.interviewResult === "fit").length;
   const registeredCount = bySlot.filter((candidate) => candidate.registrationStatus === "registered").length;
-  const resourcesSentCount = bySlot.filter((candidate) => candidate.resourcesSentAt || candidate.materialsSentAt).length;
+  const resourcesSentCount = bySlot.filter((candidate) => candidate.resourceStepsSent.length > 0).length;
 
   return {
     ...slot,
+    title: clean(slot.title) || "Собеседование LOFT HALL",
+    venueId: clean(slot.venueId || venue.id),
+    venue: clean(slot.venue || venue.name) || "LOFT HALL",
+    venueAddress: clean(slot.venueAddress || venue.address),
+    confirmationText: clean(slot.confirmationText) || defaultConfirmationText(venue),
+    confirmationVideoUrl: clean(slot.confirmationVideoUrl),
     bookedCount,
     confirmedCount,
     confirmationPendingCount,
@@ -715,7 +883,7 @@ function deriveStats(state) {
     registrationPendingTotal: candidates.filter((candidate) => candidate.status === "registration_pending").length,
     registeredTotal: candidates.filter((candidate) => candidate.registrationStatus === "registered").length,
     readyTotal: candidates.filter((candidate) => candidate.status === "ready_for_internship").length,
-    resourcesSentTotal: candidates.filter((candidate) => candidate.resourcesSentAt || candidate.materialsSentAt).length,
+    resourcesSentTotal: candidates.filter((candidate) => candidate.resourceStepsSent.length > 0).length,
     leftAfterTotal: candidates.filter((candidate) => candidate.status === "left_after_interview").length,
     openSlots: state.slots.filter((slot) => slot.status === "open").length,
     completedSlots: state.slots.filter((slot) => slot.status === "completed").length,
@@ -767,6 +935,8 @@ function applyBooking(candidate, slotId, now) {
   candidate.interviewResult = "pending";
   candidate.registrationStatus = "not_started";
   candidate.resourcesSentAt = null;
+  candidate.resourceStepsSent = [];
+  candidate.resourceErrors = [];
   candidate.leftAfterInterviewAt = null;
   candidate.internshipStage = "candidate_layer";
   candidate.lossReason = "";
@@ -803,6 +973,23 @@ function resourceTargets(state, slotId) {
     if (slotId && candidate.interviewSlotId !== slotId) return false;
     return candidate.attendanceStatus === "arrived" && candidate.status !== "left_after_interview";
   });
+}
+
+function selectResourceStep(state, resourceType, targets) {
+  const steps = getResourceSteps(state);
+  const requested = clean(resourceType);
+  if (requested) return steps.find((step) => step.type === requested) || null;
+  return steps.find((step) => targets.some((candidate) => !hasResourceStep(candidate, step.type))) || null;
+}
+
+function getResourceSteps(state) {
+  const settingsSteps = state.settings?.resourceSteps;
+  if (Array.isArray(settingsSteps) && settingsSteps.length) return settingsSteps.map(normalizeResourceStep);
+  return defaultSettings().resourceSteps;
+}
+
+function hasResourceStep(candidate, type) {
+  return Array.isArray(candidate.resourceStepsSent) && candidate.resourceStepsSent.some((step) => step.type === type);
 }
 
 function getCandidateTargets(state, payload) {
@@ -848,7 +1035,7 @@ function normalizeAttendance(attendance) {
 }
 
 function availableSeats(state, slotId) {
-  return deriveSlot(requireSlot(state, slotId), state.candidates).availableSeats;
+  return deriveSlot(requireSlot(state, slotId), state.candidates, state.settings).availableSeats;
 }
 
 function findCandidateIndex(candidates, payload = {}) {
@@ -920,6 +1107,10 @@ function normalizePhone(value) {
 
 function normalizeTelegram(value) {
   return clean(value).replace(/^@/, "").toLowerCase();
+}
+
+function normalizeVenueKey(value) {
+  return clean(value).replace(/\s+/g, "").replace("#", "").toLowerCase();
 }
 
 function clone(value) {
