@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyInterviewCommand, createSeedState, deriveState } from "./src/interview-state.js";
@@ -13,6 +14,8 @@ const DATA_DIR = path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "interviews.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
+const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || process.env.APP_URL || "https://sobes.151.244.243.164.sslip.io";
+const TELEGRAM_ACTION_SECRET = process.env.TELEGRAM_ACTION_SECRET || TELEGRAM_BOT_TOKEN || "lh-sobes-local";
 const SHARED_VENUE_DIR = path.resolve(
   __dirname,
   "../loft_hall_internship_unified_migration_integrate/public/assets/venues"
@@ -45,6 +48,11 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       sendJson(res, { ok: true, service: "loft-hall-interviews-mvp", updatedAt: new Date().toISOString() });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/telegram/action") {
+      await handleTelegramActionUrl(url, res);
       return;
     }
 
@@ -149,7 +157,7 @@ async function deliverPendingNotifications(state) {
           chat_id: candidate.telegramId,
           text: messageText,
           disable_web_page_preview: true,
-          reply_markup: replyMarkupForNotification(notification)
+          reply_markup: replyMarkupForNotification(notification, candidate)
         });
       }
 
@@ -169,6 +177,34 @@ async function deliverPendingNotifications(state) {
   }
 
   return deriveState(nextState);
+}
+
+async function handleTelegramActionUrl(url, res) {
+  const candidateId = url.searchParams.get("candidateId") || "";
+  const decision = url.searchParams.get("decision") || "";
+  const signature = url.searchParams.get("signature") || "";
+
+  if (!candidateId || !["yes", "no"].includes(decision) || !isValidTelegramActionSignature(candidateId, decision, signature)) {
+    sendTelegramActionPage(res, "Ссылка недействительна", "Откройте мини-приложение и повторите действие.", 400);
+    return;
+  }
+
+  const state = await loadState();
+  const next = applyInterviewCommand(state, {
+    action: "candidate_confirm",
+    actor: "telegram_link",
+    payload: { candidateId, decision, actor: "telegram_link" }
+  });
+  const deliveredState = await deliverPendingNotifications(next.state);
+  await saveState(deliveredState);
+
+  sendTelegramActionPage(
+    res,
+    decision === "yes" ? "Участие подтверждено" : "Отказ сохранен",
+    decision === "yes"
+      ? "Спасибо. Рекрутер увидит подтверждение в журнале."
+      : "Мы сняли вас с этой даты. Можно вернуться к записи в мини-приложении."
+  );
 }
 
 async function handleTelegramUpdate(update) {
@@ -202,12 +238,42 @@ async function answerTelegramCallback(callbackQueryId, text) {
   });
 }
 
-function replyMarkupForNotification(notification) {
+function replyMarkupForNotification(notification, candidate) {
   const actions = Array.isArray(notification.actions) ? notification.actions : [];
   const buttons = actions
     .filter((action) => action.label && action.callbackData)
-    .map((action) => ({ text: action.label, callback_data: action.callbackData }));
+    .map((action) => {
+      const confirmationUrl = confirmationActionUrl(action, candidate);
+      if (confirmationUrl) return { text: action.label, url: confirmationUrl };
+      return { text: action.label, callback_data: action.callbackData };
+    });
   return buttons.length ? { inline_keyboard: [buttons] } : undefined;
+}
+
+function confirmationActionUrl(action, candidate) {
+  const [scope, decision, candidateId] = String(action.callbackData || "").split(":");
+  if (scope !== "confirm" || !["yes", "no"].includes(decision) || !candidateId || candidate?.id !== candidateId) {
+    return "";
+  }
+  const target = new URL("/api/telegram/action", PUBLIC_APP_URL);
+  target.searchParams.set("candidateId", candidateId);
+  target.searchParams.set("decision", decision);
+  target.searchParams.set("signature", signTelegramAction(candidateId, decision));
+  return target.toString();
+}
+
+function signTelegramAction(candidateId, decision) {
+  return createHmac("sha256", TELEGRAM_ACTION_SECRET)
+    .update(`${candidateId}:${decision}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function isValidTelegramActionSignature(candidateId, decision, signature) {
+  const expected = signTelegramAction(candidateId, decision);
+  const actual = String(signature || "");
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
 }
 
 async function sendTelegramMedia(chatId, media) {
@@ -287,6 +353,34 @@ function sendText(res, payload, status = 200) {
     "Cache-Control": "no-store"
   });
   res.end(payload);
+}
+
+function sendTelegramActionPage(res, title, message, status = 200) {
+  const html = `<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b0e;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <main style="width:min(100% - 32px,420px);display:grid;gap:10px;text-align:center">
+    <h1 style="margin:0;font-size:28px;line-height:1.1">${escapeHtml(title)}</h1>
+    <p style="margin:0;color:#9b9ca5;font-size:16px;line-height:1.4">${escapeHtml(message)}</p>
+  </main>
+</body>
+</html>`;
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
+  res.end(html);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function readJson(req) {
