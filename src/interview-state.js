@@ -907,7 +907,7 @@ function upsertCandidate(state, payload, now) {
         );
 
   candidate.telegramId = clean(payload.telegramId || candidate.telegramId);
-  candidate.telegram = clean(payload.telegram || candidate.telegram);
+  candidate.telegram = requireText(payload.telegram || candidate.telegram, "Candidate Telegram is required");
   candidate.name = requireText(payload.name || candidate.name, "Candidate name is required");
   candidate.phone = requireText(payload.phone || candidate.phone, "Candidate phone is required");
   candidate.source = clean(payload.source || candidate.source || "Не указан");

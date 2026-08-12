@@ -114,6 +114,27 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "waitlist");
 });
 
+test("candidate telegram is required for shared candidate records", () => {
+  const state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  assert.throws(
+    () =>
+      applyInterviewCommand(
+        state,
+        {
+          action: "upsert_candidate",
+          payload: {
+            name: "Кандидат Без Telegram",
+            phone: "+7 900 000-00-00",
+            source: "Мини-приложение"
+          }
+        },
+        { now: "2026-08-10T10:00:00.000Z" }
+      ),
+    /Candidate Telegram is required/
+  );
+});
+
 test("arrived candidate receives resources without interview result buttons", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
 

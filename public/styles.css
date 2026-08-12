@@ -64,8 +64,14 @@
 }
 
 html,
-body {
+body,
+.app {
   touch-action: manipulation;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -655,6 +661,35 @@ textarea:focus {
   background: var(--button-quiet-active);
 }
 
+.action-done {
+  border-color: color-mix(in srgb, var(--ok) 44%, var(--line));
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  color: var(--ok);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.action-just-done {
+  animation: action-confirm 0.72s ease both;
+}
+
+@keyframes action-confirm {
+  0% {
+    transform: scale(0.985);
+  }
+
+  42% {
+    border-color: color-mix(in srgb, var(--ok) 62%, var(--line));
+    background: color-mix(in srgb, var(--ok) 18%, var(--surface));
+    color: var(--ok);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 12%, transparent);
+    transform: scale(1.015);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
 .primary:focus-visible,
 .secondary:focus-visible,
 .success:focus-visible,
@@ -1199,6 +1234,19 @@ button[aria-disabled="true"] {
   color: var(--text);
   font-size: 13px;
   font-weight: 950;
+}
+
+.panel-title-stack {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.panel-title-stack span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.3;
 }
 
 .resource-progress-panel {

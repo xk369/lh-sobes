@@ -3,7 +3,8 @@ const ui = {
   recruiterTab: "journal",
   candidateId: localStorage.getItem("lh_interviews_candidate_id") || "",
   selectedSlotId: "",
-  recruiterSearch: ""
+  recruiterSearch: "",
+  actionFeedback: {}
 };
 
 const app = document.querySelector("#app");
@@ -21,6 +22,7 @@ const lossReasons = [
   ["other", "Другое"]
 ];
 
+disableViewportZoom();
 loadState();
 
 document.addEventListener("click", async (event) => {
@@ -47,13 +49,21 @@ document.addEventListener("click", async (event) => {
   if (!action) return;
 
   try {
+    if (action === "select-slot") {
+      ui.selectedSlotId = button.dataset.slotId || ui.selectedSlotId;
+      rememberActionFeedback(button);
+      render();
+      showToast("Дата выбрана");
+      return;
+    }
+
     if (action === "book-slot") {
       const candidate = collectCandidateProfile();
       if (!candidate) return;
       const response = await runCommand("book_slot", {
         slotId: button.dataset.slotId,
         candidate
-      });
+      }, button);
       rememberCandidate(response.result.candidateId);
       showToast("Запись на собеседование сохранена");
       return;
@@ -62,7 +72,7 @@ document.addEventListener("click", async (event) => {
     if (action === "join-waitlist") {
       const candidate = collectCandidateProfile();
       if (!candidate) return;
-      const response = await runCommand("join_waitlist", { candidate });
+      const response = await runCommand("join_waitlist", { candidate }, button);
       rememberCandidate(response.result.candidateId);
       showToast("Кандидат добавлен в ожидание новой даты");
       return;
@@ -72,7 +82,7 @@ document.addEventListener("click", async (event) => {
       await runCommand("candidate_confirm", {
         candidateId: requireCurrentCandidateId(),
         decision: button.dataset.decision
-      });
+      }, button);
       showToast(button.dataset.decision === "yes" ? "Участие подтверждено" : "Отказ сохранен");
       return;
     }
@@ -82,7 +92,7 @@ document.addEventListener("click", async (event) => {
         candidateId: requireCurrentCandidateId(),
         intent: button.dataset.intent,
         slotId: button.dataset.slotId || undefined
-      });
+      }, button);
       showToast("Выбор по повторной записи сохранен");
       return;
     }
@@ -91,7 +101,7 @@ document.addEventListener("click", async (event) => {
       await runCommand("request_confirmation", {
         candidateId: button.dataset.candidateId || undefined,
         slotId: button.dataset.slotId || ui.selectedSlotId || undefined
-      });
+      }, button);
       showToast("Запрос подтверждения отправлен");
       return;
     }
@@ -99,7 +109,7 @@ document.addEventListener("click", async (event) => {
     if (action === "send-due-confirmations") {
       await runCommand("send_due_confirmations", {
         slotId: button.dataset.slotId || ui.selectedSlotId || undefined
-      });
+      }, button);
       showToast("Подтверждения за день отправлены");
       return;
     }
@@ -114,7 +124,7 @@ document.addEventListener("click", async (event) => {
       await runCommand("mark_attendance", {
         candidateId: button.dataset.candidateId,
         attendance: attendanceByAction[action]
-      });
+      }, button);
       showToast("Журнал собеседования обновлен");
       return;
     }
@@ -125,7 +135,7 @@ document.addEventListener("click", async (event) => {
         : ui.role === "candidate"
           ? { candidateId: requireCurrentCandidateId() }
           : { slotId: ui.selectedSlotId || undefined };
-      await runCommand("send_registration_materials", payload);
+      await runCommand("send_registration_materials", payload, button);
       showToast("Материалы регистрации отправлены");
       return;
     }
@@ -134,7 +144,7 @@ document.addEventListener("click", async (event) => {
       const response = await runCommand("send_resource_step", {
         slotId: button.dataset.slotId || ui.selectedSlotId || undefined,
         resourceType: button.dataset.resourceType || undefined
-      });
+      }, button);
       showToast(response.result.resourceLabel ? `${response.result.resourceLabel}: отправлено ${response.result.sentCount}` : "Все ресурсы уже отправлены");
       return;
     }
@@ -142,13 +152,13 @@ document.addEventListener("click", async (event) => {
     if (action === "mark-left-after-interview") {
       await runCommand("mark_left_after_interview", {
         candidateId: button.dataset.candidateId
-      });
+      }, button);
       showToast("Кандидат отмечен как ушедший после собеса");
       return;
     }
 
     if (action === "complete-slot") {
-      await runCommand("complete_slot", { slotId: button.dataset.slotId || ui.selectedSlotId });
+      await runCommand("complete_slot", { slotId: button.dataset.slotId || ui.selectedSlotId }, button);
       showToast("Собеседование завершено");
       return;
     }
@@ -163,13 +173,13 @@ document.addEventListener("click", async (event) => {
       await runCommand("mark_registration", {
         candidateId: button.dataset.candidateId,
         registrationStatus: action === "mark-registration-pending" ? "pending" : "registered"
-      });
+      }, button);
       showToast("Регистрация обновлена вручную");
       return;
     }
 
     if (action === "mark-all-registered") {
-      await runCommand("mark_all_registered", { slotId: button.dataset.slotId || ui.selectedSlotId });
+      await runCommand("mark_all_registered", { slotId: button.dataset.slotId || ui.selectedSlotId }, button);
       showToast("Группа отмечена зарегистрированной");
       return;
     }
@@ -177,7 +187,7 @@ document.addEventListener("click", async (event) => {
     if (action === "notify-waitlist") {
       await runCommand("notify_waitlist", {
         slotId: button.dataset.slotId || ui.selectedSlotId || undefined
-      });
+      }, button);
       showToast("Лист ожидания уведомлен");
       return;
     }
@@ -186,7 +196,7 @@ document.addEventListener("click", async (event) => {
       await runCommand("record_loss_reason", {
         candidateId: button.dataset.candidateId || requireCurrentCandidateId(),
         reason: button.dataset.reason
-      });
+      }, button);
       showToast("Причина сохранена");
       return;
     }
@@ -195,7 +205,7 @@ document.addEventListener("click", async (event) => {
       await runCommand("record_link_click", {
         candidateId: requireCurrentCandidateId(),
         linkType: button.dataset.linkType
-      });
+      }, button);
       showToast("Переход зафиксирован");
       return;
     }
@@ -276,15 +286,80 @@ async function loadState() {
   render();
 }
 
-async function runCommand(action, payload) {
+async function runCommand(action, payload, feedbackButton = null) {
   const response = await fetchJson("/api/command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, payload })
   });
   state = response.state;
+  rememberActionFeedback(feedbackButton);
   render();
   return response;
+}
+
+function actionFeedbackKey(action, parts = {}) {
+  return [
+    action || "",
+    parts.slotId || ui.selectedSlotId || "",
+    parts.candidateId || "",
+    parts.resourceType || "",
+    parts.decision || "",
+    parts.intent || "",
+    parts.reason || "",
+    parts.linkType || ""
+  ].join("|");
+}
+
+function actionFeedbackKeyFromButton(button) {
+  if (!button?.dataset?.action) return "";
+  return actionFeedbackKey(button.dataset.action, {
+    slotId: button.dataset.slotId,
+    candidateId: button.dataset.candidateId,
+    resourceType: button.dataset.resourceType,
+    decision: button.dataset.decision,
+    intent: button.dataset.intent,
+    reason: button.dataset.reason,
+    linkType: button.dataset.linkType
+  });
+}
+
+function rememberActionFeedback(button) {
+  const key = actionFeedbackKeyFromButton(button);
+  if (!key) return;
+  ui.actionFeedback[key] = Date.now();
+  window.setTimeout(() => {
+    if (!ui.actionFeedback[key]) return;
+    delete ui.actionFeedback[key];
+    render();
+  }, 1100);
+}
+
+function actionFeedbackClass(action, parts = {}) {
+  return ui.actionFeedback[actionFeedbackKey(action, parts)] ? " action-just-done" : "";
+}
+
+function actionDoneClass(done, action, parts = {}) {
+  return `${done ? " action-done" : ""}${actionFeedbackClass(action, parts)}`;
+}
+
+function disableViewportZoom() {
+  ["gesturestart", "gesturechange", "gestureend"].forEach((eventName) => {
+    document.addEventListener(eventName, (event) => event.preventDefault(), { passive: false });
+  });
+
+  let lastTouchEnd = 0;
+  document.addEventListener(
+    "touchend",
+    (event) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    },
+    { passive: false }
+  );
 }
 
 async function fetchJson(url, options = {}) {
@@ -386,14 +461,14 @@ function renderCandidateForm(candidate) {
       </label>
       <label>
         Telegram
-        <input name="telegram" value="${escapeAttr(profile.telegram)}" placeholder="@username" />
+        <input name="telegram" value="${escapeAttr(profile.telegram)}" autocomplete="username" required placeholder="@username" />
       </label>
       <label>
         Телефон
         <input name="phone" value="${escapeAttr(profile.phone)}" autocomplete="tel" required />
       </label>
       <div class="form-autosave" id="candidateAutosaveStatus" aria-live="polite">
-        ${candidate ? "Данные сохранены" : "Заполните ФИО и телефон"}
+        ${candidate ? "Данные сохранены" : "Заполните ФИО, Telegram и телефон"}
       </div>
     </form>
   `;
@@ -578,6 +653,7 @@ function renderJournalTab() {
   const slotCandidates = state.candidates.filter((candidate) => candidate.interviewSlotId === ui.selectedSlotId);
   const candidates = filterCandidates(slotCandidates);
   const slot = state.slots.find((item) => item.id === ui.selectedSlotId);
+  const confirmationsRequested = slotConfirmationRequested(ui.selectedSlotId);
   const unmarked = candidates.filter(isUnmarkedCandidate);
   const arrived = candidates.filter(isArrivedCandidate);
   const arrivedAll = slotCandidates.filter(isArrivedCandidate);
@@ -594,7 +670,14 @@ function renderJournalTab() {
           Поиск
           <input data-candidate-search value="${escapeAttr(ui.recruiterSearch)}" placeholder="ФИО, Telegram, телефон" />
         </label>
-        <button type="button" class="secondary" data-action="send-due-confirmations" data-slot-id="${escapeAttr(ui.selectedSlotId)}">Подтверждение за день</button>
+        <button
+          type="button"
+          class="${confirmationsRequested ? "success" : "secondary"}${actionDoneClass(confirmationsRequested, "send-due-confirmations", { slotId: ui.selectedSlotId })}"
+          data-action="send-due-confirmations"
+          data-slot-id="${escapeAttr(ui.selectedSlotId)}"
+        >
+          ${confirmationsRequested ? "Подтверждение отправлено" : "Подтверждение за день"}
+        </button>
       </div>
       ${renderJournalGroup("Не отмечены", unmarked, "wait")}
       ${renderSlotResourceControls(slot, arrivedAll)}
@@ -616,6 +699,16 @@ function renderJournalGroup(title, candidates, tone) {
       </div>
     </section>
   `;
+}
+
+function slotConfirmationRequested(slotId) {
+  return state.candidates.some((candidate) => candidate.interviewSlotId === slotId && candidate.confirmationRequestedAt);
+}
+
+function waitlistNotifiedForSlot(slotId) {
+  return state.candidates.some(
+    (candidate) => candidate.status === "waitlist" && candidate.waitlistTargetSlotId === slotId && candidate.lastWaitlistNotifiedAt
+  );
 }
 
 function renderSlotResourceControls(slot, candidates) {
@@ -771,6 +864,8 @@ function renderAttendanceCorrection(candidate) {
 
 function renderDatesTab() {
   const waitlist = state.candidates.filter((candidate) => candidate.status === "waitlist");
+  const selectedSlot = state.slots.find((slot) => slot.id === ui.selectedSlotId);
+  const waitlistNotified = waitlistNotifiedForSlot(ui.selectedSlotId);
 
   return `
     <section class="grid">
@@ -810,8 +905,19 @@ function renderDatesTab() {
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Ожидание</h2>
-          <button type="button" class="secondary" data-action="notify-waitlist" data-slot-id="${escapeAttr(ui.selectedSlotId)}">Уведомить</button>
+          <div class="panel-title-stack">
+            <h2>Лист ожидания</h2>
+            ${selectedSlot ? `<span>${escapeHtml(slotLabel(selectedSlot))}</span>` : ""}
+          </div>
+          <button
+            type="button"
+            class="${waitlistNotified ? "success" : "secondary"}${actionDoneClass(waitlistNotified, "notify-waitlist", { slotId: ui.selectedSlotId })}"
+            data-action="notify-waitlist"
+            data-slot-id="${escapeAttr(ui.selectedSlotId)}"
+            ${!waitlist.length || !selectedSlot ? "disabled aria-disabled=\"true\"" : ""}
+          >
+            ${waitlistNotified ? "Лист уведомлен" : "Уведомить лист"}
+          </button>
         </div>
         <div class="candidate-list">
           ${waitlist.map(renderWaitlistCandidate).join("") || '<div class="empty">Список ожидания пуст</div>'}
@@ -827,17 +933,24 @@ function renderDatesTab() {
 }
 
 function renderWaitlistCandidate(candidate, index = 0) {
+  const telegram = cleanTelegram(candidate.telegram);
   return `
-    <article class="candidate-card">
-      <div class="candidate-card-head">
-        <div class="candidate-title-line">
-          <span class="candidate-number">${index + 1}</span>
-          <b class="name">${escapeHtml(candidate.name)}</b>
+    <article class="candidate-card recruiter-candidate-card waitlist-candidate-card">
+      <details class="recruiter-person-details">
+        <summary class="candidate-name-summary">
+          <span class="candidate-title-line">
+            <span class="candidate-number">${index + 1}</span>
+            <b class="name">${escapeHtml(candidate.name)}</b>
+          </span>
+        </summary>
+        <div class="candidate-details-body">
+          ${renderCandidateMeta(candidate)}
+          ${candidate.lastWaitlistNotifiedAt ? `<p class="candidate-note">Последнее уведомление: ${escapeHtml(formatDateTime(candidate.lastWaitlistNotifiedAt))}</p>` : ""}
         </div>
-        ${renderStatusPill(candidate.status, null, true)}
+      </details>
+      <div class="compact-person-row">
+        ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
       </div>
-      ${renderCandidateMeta(candidate)}
-      ${candidate.lastWaitlistNotifiedAt ? `<p class="candidate-note">Последнее уведомление: ${escapeHtml(formatDateTime(candidate.lastWaitlistNotifiedAt))}</p>` : ""}
     </article>
   `;
 }
@@ -857,8 +970,15 @@ function renderRecruiterSlot(slot) {
         ${slot.venueAddress ? `<span>${escapeHtml(slot.venueAddress)}</span>` : ""}
       </div>
       <div class="candidate-actions">
-        <button type="button" class="secondary" data-action="request-confirmation" data-slot-id="${escapeAttr(slot.id)}">Подтверждение</button>
-        <button type="button" class="secondary" data-action="notify-waitlist" data-slot-id="${escapeAttr(slot.id)}">Ожидание</button>
+        <button
+          type="button"
+          class="${slot.id === ui.selectedSlotId ? "success action-done" : "secondary"}${actionFeedbackClass("select-slot", { slotId: slot.id })}"
+          data-action="select-slot"
+          data-slot-id="${escapeAttr(slot.id)}"
+          ${slot.id === ui.selectedSlotId ? "aria-pressed=\"true\"" : ""}
+        >
+          ${slot.id === ui.selectedSlotId ? "Выбрана" : "Выбрать дату"}
+        </button>
       </div>
     </article>
   `;
@@ -1152,8 +1272,8 @@ function collectCandidateProfile() {
     note: data.note?.trim()
   };
 
-  if (!candidate.name || !candidate.phone) {
-    showToast("ФИО и телефон обязательны");
+  if (!candidate.name || !candidate.telegram || !candidate.phone) {
+    showToast("ФИО, Telegram и телефон обязательны");
     return null;
   }
 
@@ -1168,8 +1288,8 @@ function scheduleCandidateAutosave() {
     if (!form || !status) return;
 
     const data = Object.fromEntries(new FormData(form));
-    if (!data.name?.trim() || !data.phone?.trim()) {
-      status.textContent = "Заполните ФИО и телефон";
+    if (!data.name?.trim() || !data.telegram?.trim() || !data.phone?.trim()) {
+      status.textContent = "Заполните ФИО, Telegram и телефон";
       return;
     }
 
