@@ -15,15 +15,6 @@ let state = null;
 let toastTimer = null;
 let autosaveTimer = null;
 
-const lossReasons = [
-  ["date_time", "Дата или время"],
-  ["location", "Расположение"],
-  ["circumstances", "Обстоятельства"],
-  ["conditions", "Условия работы"],
-  ["other_offer", "Другое предложение"],
-  ["other", "Другое"]
-];
-
 disableViewportZoom();
 loadState();
 
@@ -216,12 +207,19 @@ document.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "loss-reason") {
-      await runCommand("record_loss_reason", {
-        candidateId: button.dataset.candidateId || requireCurrentCandidateId(),
-        reason: button.dataset.reason
-      }, button);
-      showToast("Причина сохранена");
+    if (action === "clear-archive") {
+      if (!window.confirm("Очистить архив завершенных собеседований? Активные даты и текущие кандидаты останутся.")) return;
+      const response = await runCommand("clear_archive", {}, button);
+      showToast(`Архив очищен: дат ${response.result.removedSlots}, кандидатов ${response.result.removedCandidates}`);
+      return;
+    }
+
+    if (action === "clear-recruiter-data") {
+      if (!window.confirm("Очистить все данные sobes: даты, кандидатов, ожидание, уведомления и события? Настройки площадок сохранятся.")) return;
+      const response = await runCommand("clear_recruiter_data", {}, button);
+      clearRememberedCandidate();
+      ui.selectedSlotId = "";
+      showToast(`Данные очищены: дат ${response.result.removedSlots}, кандидатов ${response.result.removedCandidates}`);
       return;
     }
 
@@ -246,6 +244,7 @@ document.addEventListener("click", async (event) => {
       const response = await fetchJson("/api/reset", { method: "POST" });
       state = response.state;
       ui.selectedSlotId = state.slots[0]?.id || "";
+      clearRememberedCandidate();
       render();
       showToast("Демо-данные сброшены");
     }
@@ -331,6 +330,9 @@ document.addEventListener("submit", async (event) => {
 async function loadState() {
   const response = await fetchJson("/api/state");
   state = response.state;
+  if (isDeveloperUser() && !localStorage.getItem("lh_interviews_role")) {
+    ui.role = "recruiter";
+  }
   ui.selectedSlotId = ui.selectedSlotId || state.slots[0]?.id || "";
   render();
 }
@@ -493,8 +495,6 @@ function renderCandidateView(candidate) {
         </div>
         <button type="button" class="secondary" data-action="join-waitlist">Уведомить о следующем собеседовании</button>
       </section>
-
-      ${candidate ? renderLossReasonSurvey(candidate) : ""}
     </section>
   `;
 }
@@ -648,29 +648,6 @@ function renderRegistrationLink(link, candidate) {
         ${clicked ? "Переход зафиксирован" : "Зафиксировать переход"}
       </button>
     </article>
-  `;
-}
-
-function renderLossReasonSurvey(candidate) {
-  const needsReason = ["no_show", "declined_before_interview", "no_confirmation", "left_after_interview", "rejected", "not_interested"].includes(candidate.status);
-  if (!needsReason) return "";
-
-  return `
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Причина отказа</h2>
-        ${candidate.lossReason ? '<span class="pill ok">сохранено</span>' : '<span class="pill wait">нужно</span>'}
-      </div>
-      <div class="candidate-actions">
-        ${lossReasons
-          .map(([reason, label]) => `
-            <button type="button" class="${candidate.lossReason === reason ? "success" : "secondary"}" data-action="loss-reason" data-reason="${escapeAttr(reason)}">
-              ${escapeHtml(label)}
-            </button>
-          `)
-          .join("")}
-      </div>
-    </section>
   `;
 }
 
@@ -1088,7 +1065,41 @@ function renderDatesTab() {
             ${visibleArchivedSlots.map(renderArchivedSlot).join("") || '<div class="empty">В архиве ничего не найдено</div>'}
           </div>
         </details>
+        ${renderDataToolsPanel()}
       </section>
+    </section>
+  `;
+}
+
+function renderDataToolsPanel() {
+  const activeCount = activeSlots().length;
+  const archivedCount = archivedSlots().length;
+  const candidateCount = state.candidates.length;
+
+  return `
+    <section class="data-tools-panel">
+      <div class="data-tools-copy">
+        <b>Очистка данных</b>
+        <span>Для тестов можно сбросить журнал без изменения площадок, проходок и шаблонов материалов.</span>
+      </div>
+      <div class="data-tools-actions">
+        <button
+          type="button"
+          class="danger${actionFeedbackClass("clear-archive")}"
+          data-action="clear-archive"
+          ${archivedCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Очистить архив
+        </button>
+        <button
+          type="button"
+          class="danger${actionFeedbackClass("clear-recruiter-data")}"
+          data-action="clear-recruiter-data"
+          ${activeCount === 0 && archivedCount === 0 && candidateCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Очистить все данные
+        </button>
+      </div>
     </section>
   `;
 }
@@ -1270,10 +1281,6 @@ function renderAnalyticsTab() {
           no_confirmation: state.stats.noConfirmationTotal,
           left_after: state.stats.leftAfterTotal
         }, attendanceLabel)}</div>
-      </section>
-      <section class="panel">
-        <h2>Причины потерь</h2>
-        <div class="reason-grid">${renderStatsMap(state.lossReasonStats, lossReasonLabel)}</div>
       </section>
       <section class="panel">
         <h2>Последние события</h2>
@@ -1659,9 +1666,20 @@ function rememberCandidate(candidateId) {
   localStorage.setItem("lh_interviews_candidate_id", candidateId);
 }
 
+function clearRememberedCandidate() {
+  ui.candidateId = "";
+  localStorage.removeItem("lh_interviews_candidate_id");
+}
+
 function getCurrentCandidate() {
   if (!ui.candidateId) return null;
   return state.candidates.find((candidate) => candidate.id === ui.candidateId) || null;
+}
+
+function isDeveloperUser() {
+  const telegramId = String(telegramWebAppUser()?.id || "");
+  const developerIds = (state?.settings?.developerTelegramIds || []).map((id) => String(id));
+  return Boolean(telegramId && developerIds.includes(telegramId));
 }
 
 async function copyText(value) {
@@ -1792,10 +1810,6 @@ function registrationLabel(status) {
   return labels[status] || status || "Регистрация";
 }
 
-function lossReasonLabel(reason) {
-  return lossReasons.find(([key]) => key === reason)?.[1] || reason || "Причина";
-}
-
 function statusTone(status) {
   if (["ready_for_internship", "registered", "attended", "confirmed"].includes(status)) return "ok";
   if (["waitlist", "confirmation_pending", "registration_pending", "booked", "no_confirmation"].includes(status)) return "wait";
@@ -1823,7 +1837,7 @@ function eventTypeLabel(type) {
     registration_marked: "Регистрация",
     slot_registered_all: "Все зареганы",
     candidate_rebook_interest: "Повторная запись",
-    loss_reason_recorded: "Причина отказа",
+    loss_reason_recorded: "Потеря кандидата",
     link_click_recorded: "Переход по ссылке"
   };
   return labels[type] || type;

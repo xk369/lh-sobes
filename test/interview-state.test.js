@@ -43,15 +43,33 @@ test("new interview date automatically notifies waitlist candidates", () => {
   assert.equal(notification.slotId, result.result.slotId);
 });
 
-test("legacy auto booking messages migrate to current candidate template", () => {
+test("legacy auto booking messages migrate to empty booking text", () => {
   const state = createSeedState("2026-08-10T09:00:00.000Z");
   state.slots[0].bookingText = "Ждем вас на собеседовании: LOFT #8. После подтверждения отправим дополнительные материалы.";
-  state.slots[1].bookingText = "Вход со стороны главной проходной.";
+  state.slots[1].bookingText = "РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ ДВУХ СТОЛИЦ!\n\nБольшой старый шаблон.";
+  state.notifications.unshift({
+    id: "notif-old",
+    candidateId: "cand-001",
+    type: "booking_materials",
+    title: "Материалы к собеседованию",
+    message: "Материалы к собеседованию\n\nРАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ ДВУХ СТОЛИЦ!\n\nБольшой старый шаблон.",
+    slotId: "slot-001",
+    media: [],
+    actions: [],
+    status: "pending",
+    channel: "telegram",
+    createdAt: "2026-08-10T09:30:00.000Z",
+    sentAt: null
+  });
 
   const derived = deriveState(state);
 
-  assert.match(derived.slots[0].bookingText, /РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ/);
-  assert.equal(derived.slots[1].bookingText, "Вход со стороны главной проходной.");
+  assert.equal(derived.slots[0].bookingText, "");
+  assert.equal(derived.slots[1].bookingText, "");
+  const legacyNotification = derived.notifications.find((item) => item.id === "notif-old");
+  assert.equal(legacyNotification.title, "");
+  assert.equal(legacyNotification.message, "");
+  assert.deepEqual(derived.settings.developerTelegramIds, ["1294774551"]);
 });
 
 test("candidate can confirm, miss interview, and return to waitlist", () => {
@@ -95,9 +113,8 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     (item) => item.candidateId === candidate.id && item.type === "booking_materials"
   );
   assert.equal(bookingMaterials.slotId, "slot-002");
-  assert.match(bookingMaterials.message, /РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ/);
-  assert.match(bookingMaterials.message, /2-й Кожуховский проезд/);
-  assert.match(bookingMaterials.message, /видео/);
+  assert.equal(bookingMaterials.title, "");
+  assert.equal(bookingMaterials.message, "");
   assert.equal(bookingMaterials.media.length, 1);
   assert.equal(bookingMaterials.media[0].type, "video");
   assert.equal(bookingMaterials.media[0].fileId, "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E");
@@ -146,14 +163,7 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   assert.equal(noShow.status, "no_show");
   const noShowFollowup = state.notifications.find((item) => item.candidateId === candidate.id && item.type === "no_show_followup");
   assert.ok(noShowFollowup);
-  assert.match(noShowFollowup.message, /неявку/);
-
-  ({ state } = applyInterviewCommand(
-    state,
-    { action: "record_loss_reason", payload: { candidateId: candidate.id, reason: "date_time" } },
-    { now: "2026-08-13T12:10:00.000Z" }
-  ));
-  assert.equal(state.candidates.find((item) => item.id === candidate.id).lossReason, "date_time");
+  assert.match(noShowFollowup.message, /интерес к LOFT HALL/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -161,6 +171,49 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     { now: "2026-08-13T12:12:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "waitlist");
+});
+
+test("candidate can rebook to another open slot and free previous seat", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "book_slot",
+      payload: {
+        slotId: "slot-002",
+        candidate: {
+          telegramId: "555555556",
+          telegram: "@rebook_candidate",
+          name: "Кандидат Перезапись",
+          phone: "+7 900 555-55-56",
+          source: "Telegram"
+        }
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  ));
+
+  const candidate = state.candidates.find((item) => item.telegramId === "555555556");
+  const slotTwoBefore = state.slots.find((item) => item.id === "slot-002");
+  const slotOneBefore = state.slots.find((item) => item.id === "slot-001");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "rebook_interest", payload: { candidateId: candidate.id, intent: "book_slot", slotId: "slot-001" } },
+    { now: "2026-08-10T10:30:00.000Z" }
+  ));
+
+  const rebooked = state.candidates.find((item) => item.id === candidate.id);
+  const slotTwoAfter = state.slots.find((item) => item.id === "slot-002");
+  const slotOneAfter = state.slots.find((item) => item.id === "slot-001");
+
+  assert.equal(rebooked.interviewSlotId, "slot-001");
+  assert.equal(rebooked.status, "booked");
+  assert.equal(rebooked.confirmationStatus, "not_requested");
+  assert.equal(rebooked.attendanceStatus, "unknown");
+  assert.equal(slotTwoAfter.availableSeats, slotTwoBefore.availableSeats + 1);
+  assert.equal(slotOneAfter.availableSeats, slotOneBefore.availableSeats - 1);
 });
 
 test("candidate telegram is required for shared candidate records", () => {
@@ -320,7 +373,7 @@ test("recruiter can mark candidate left after interview and complete slot", () =
     (item) => item.candidateId === candidate.id && item.type === "cooperation_not_started"
   );
   assert.ok(cooperationNotification);
-  assert.match(cooperationNotification.message, /не продолжили сотрудничество/);
+  assert.match(cooperationNotification.message, /Спасибо, что пришли/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -331,4 +384,37 @@ test("recruiter can mark candidate left after interview and complete slot", () =
   const slot = state.slots.find((item) => item.id === "slot-001");
   assert.equal(slot.status, "completed");
   assert.ok(slot.completedAt);
+});
+
+test("recruiter can clear archive and all interview data", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "complete_slot", payload: { slotId: "slot-001" } },
+    { now: "2026-08-13T14:00:00.000Z" }
+  ));
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "clear_archive", payload: {} },
+    { now: "2026-08-13T14:05:00.000Z" }
+  ));
+
+  assert.equal(state.slots.some((slot) => slot.id === "slot-001"), false);
+  assert.equal(state.slots.some((slot) => slot.id === "slot-002"), true);
+  assert.equal(state.candidates.some((candidate) => candidate.interviewSlotId === "slot-001"), false);
+  assert.deepEqual(state.settings.developerTelegramIds, ["1294774551"]);
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "clear_recruiter_data", payload: {} },
+    { now: "2026-08-13T14:10:00.000Z" }
+  ));
+
+  assert.equal(state.slots.length, 0);
+  assert.equal(state.candidates.length, 0);
+  assert.equal(state.notifications.length, 0);
+  assert.equal(state.events.length, 0);
+  assert.equal(state.settings.interviewVenues.some((venue) => venue.id === "loft4"), true);
 });

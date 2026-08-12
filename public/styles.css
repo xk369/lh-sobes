@@ -1590,6 +1590,47 @@ button[aria-disabled="true"] {
   margin-top: 10px;
 }
 
+.data-tools-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.data-tools-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.data-tools-copy b {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.data-tools-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.32;
+}
+
+.data-tools-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.data-tools-actions .danger {
+  min-height: 40px;
+  border-radius: 13px;
+  font-size: 12px;
+}
+
 .archive-slot-card {
   display: grid;
   gap: 10px;
@@ -1845,6 +1886,11 @@ button[aria-disabled="true"] {
 
   .recruiter-nav {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .data-tools-panel,
+  .data-tools-actions {
+    grid-template-columns: 1fr;
   }
 
   .recruiter-nav .secondary,

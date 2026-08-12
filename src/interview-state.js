@@ -4,66 +4,12 @@ const LEGACY_ROUTE_FILE_ID = "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAm
 const LOFT_23_ROUTE_FILE_ID = "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E";
 const LOFT_4_ROUTE_FILE_ID = "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E";
 const LEGACY_BOOKING_TEXT = "Вы записаны на собеседование. Сохраните адрес и приходите за 10 минут до начала.";
+const LEGACY_LONG_BOOKING_MARKER = "РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ ДВУХ СТОЛИЦ!";
 const LEGACY_BOOKING_PREFIXES = [
   "Вы записаны на собеседование:",
   "Ждем вас на собеседовании:"
 ];
-const DEFAULT_BOOKING_TEXT = `РАБОТАЙТЕ В ОДНОМ ИЗ ЛУЧШИХ EVENT-ПРОЕКТОВ ДВУХ СТОЛИЦ!
-
-LOFT HALL – это комплекс из 7 особняков, более 30 event-пространств в самом центре Москвы. Обладатель премий: «Лучшая городская площадка для проведения свадьбы 2024», «Событие года», «Лучшая городская event-площадка 2023» и «Лучшая площадка России для проведения мероприятий 2025».
-
-Каждый год проводим более 1900 мероприятий всех форматов, масштабы – от 30 до 5000 гостей.
-
-Бизнес-тренинги и роскошные свадьбы на сотни гостей, презентации автомобилей и закрытые музыкальные тусовки – это не рабочая рутина, а причастность к созданию уникальных событий.
-
-Мы – часть дома ивентов LOFT HALL, состоящего из авторских пространств в сердце Москвы и Санкт-Петербурга. Наша концепция – первоклассное обслуживание, изысканная кухня и топовое оборудование в стильных интерьерах от голландского дизайнера Placebo/25 Development.
-
-Мы формируем команду для постоянной работы в пространствах LOFT#1, #2-3, #4, #8 ,THE BIRCH или подработки по графику, который выбираете вы. Круглый год у нас проходят мероприятия всех форматов с несколькими сотнями молодых сотрудников. Своя школа сервиса, гостеприимства и повышения качества.
-
-🎉 Мы предлагаем:
-
-• свободный график;
-• бесплатное обучение тонкостям профессии и оплачиваемые стажировки;
-• оплату с первого часа работы;
-• плановое повышение ставок в сезоны высокой загрузки;
-• выплаты раз в неделю в офисе компании или устройство по самозанятости;
-• обед от наших поваров;
-• компенсацию такси от 700 руб. после 00:35;
-• возможность совмещения нескольких вакансий внутри департамента;
-• работу в молодом коллективе и стильных пространствах в центре города;
-• неформальные встречи, фотосессии внутри лофтов и многое другое.
-
-Работайте на постоянной позиции или в графике, который подходит именно вам.
-Совмещайте учёбу и карьерный рост, получайте уникальный опыт в сфере гостеприимства!
-
-🎉 Действуйте, чтобы стать частью масштабного проекта LOFT HALL:
-
-Этап 1. Оплачиваемые стажировочные смены для сотрудников без опыта работы:
-
-Вы познакомитесь с компанией изнутри, изучите залы и техническое оснащение, инвентарь и логистику. Средняя загруженность полной рабочей смены – 10-12 ч, график выбираете вы себе сами, оплата от 400 руб/час. Разовая стажировка (по желанию) - 1000 рублей за 6 часов выполнения практических заданий от старшего официанта на банкете.
-
-Этап 2. Бесплатный Welcome-тренинг (по желанию):
-
-1я часть – теория: презентация LOFT HALL, обсуждение стандартов внутренних коммуникаций и корпоративной культуры, особенностей сервиса в индустрии гостеприимства.
-2я часть – практика: знакомство с правилами обслуживания гостей на банкетных мероприятиях.
-
-Этап 3. Переход из статуса стажера в опытные сотрудники:
-
-На основе этапов 1 и 2 вам будет предложено пройти тестирование на усвоение материала. По итогу положительного прохождения стажировки вы сможете получать приглашения и выходить на все форматы мероприятий и фестивали в свободном режиме.
-
-Этап 4. Профессиональное развитие и рост:
-
-Проявляя инициативу, ответственность и пунктуальность, ориентируясь в наших пространствах и работая в сменах не менее 3 раз в неделю, вы можете стать «постоянным официантом» LOFT HALL по ставке от 450 руб/час.
-
-🎉 Возможности карьерного роста для всех:
-
-• Проявляйте коммуникативные и организационные навыки, обучайте новых сотрудников, помогайте банкетному менеджеру в построении зала к мероприятию, чтобы стать супервайзером по ставке от 500-550 руб/час;
-• Вырастите из супервайзера в помощника банкетного менеджера на отличных условиях;
-• Займите интересную позицию в любом из направлений компании Placebo/25, если интересна работа в других департаментах!
-
-Станьте частью команды, организующей самые яркие события Москвы!
-
-https://msk.lofthall.ru/mobile`;
+const DEVELOPER_TELEGRAM_IDS = ["1294774551"];
 const WORK_LINKS_MESSAGE = `Бот для записи на смену
 @LoftHallStaffBot
 
@@ -352,7 +298,7 @@ export function deriveState(input) {
   state.settings = normalizeSettings(state.settings);
   state.slots = Array.isArray(state.slots) ? state.slots : [];
   state.candidates = Array.isArray(state.candidates) ? state.candidates.map(normalizeCandidate) : [];
-  state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
+  state.notifications = Array.isArray(state.notifications) ? state.notifications.map(normalizeNotificationRecord) : [];
   state.events = Array.isArray(state.events) ? state.events : [];
 
   state.slots = state.slots.map((slot) => deriveSlot(slot, state.candidates, state.settings));
@@ -385,9 +331,8 @@ export function applyInterviewCommand(input, command, options = {}) {
     case "book_slot": {
       const slot = requireSlot(state, payload.slotId);
       if (slot.status !== "open") throw new Error("Slot is not open");
-      if (availableSeats(state, slot.id) < 1) throw new Error("No seats left for this slot");
-
       const candidate = upsertCandidate(state, payload.candidate || payload, now);
+      if (availableSeatsForBooking(state, slot.id, candidate.id) < 1) throw new Error("No seats left for this slot");
       applyBooking(candidate, slot.id, now);
       appendNotification(state, candidate.id, "booking_created", now, {
         title: "Вы записаны на собеседование",
@@ -508,7 +453,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         if (!wasDeclined) {
           appendNotification(state, candidate.id, "interview_declined_saved", now, {
             title: "Отказ от собеседования сохранен",
-            message: "Мы сняли вас с этой даты. Если захотите вернуться, можно записаться на новую дату или перейти в ожидание следующего собеседования.",
+            message: "Мы сняли вас с этой даты. Спасибо, что предупредили заранее. Если позже формат LOFT HALL снова станет актуален, можно будет выбрать новую дату.",
             slotId: candidate.interviewSlotId
           });
         }
@@ -535,6 +480,11 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.status = "declined_before_interview";
         candidate.candidateLayerStatus = "interview_declined_before";
         candidate.confirmationStatus = "declined";
+        appendNotification(state, candidate.id, "interview_declined_saved", now, {
+          title: "Отказ от собеседования сохранен",
+          message: "Мы сняли вас с этой даты. Спасибо, что предупредили заранее. Если позже формат LOFT HALL снова станет актуален, можно будет выбрать новую дату.",
+          slotId: candidate.interviewSlotId
+        });
       } else if (attendance === "no_confirmation") {
         candidate.status = "no_confirmation";
         candidate.candidateLayerStatus = "interview_no_confirmation";
@@ -543,8 +493,8 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.status = "no_show";
         candidate.candidateLayerStatus = "interview_no_show";
         appendNotification(state, candidate.id, "no_show_followup", now, {
-          title: "Вы не пришли на собеседование",
-          message: "Мы отметили неявку по этой дате. Если хотите попробовать снова, можно записаться на следующую дату или перейти в ожидание нового собеседования.",
+          title: "Сегодня не получилось прийти",
+          message: "Мы отметили неявку по этой дате. Ничего страшного: если интерес к LOFT HALL остался, можно выбрать новую дату или дождаться следующего приглашения.",
           slotId: candidate.interviewSlotId
         });
       }
@@ -587,9 +537,10 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.registrationStatus = "not_started";
         candidate.internshipStage = "not_ready";
         if (interviewResult === "self_declined") {
-          appendNotification(state, candidate.id, "loss_reason_request", now, {
-            title: "Уточните причину отказа",
-            message: "Короткий ответ поможет понять, на каком этапе теряются кандидаты."
+          appendNotification(state, candidate.id, "cooperation_not_started", now, {
+            title: "Спасибо за встречу",
+            message: "Спасибо, что познакомились с LOFT HALL. Если после собеседования вы поняли, что формат или условия сейчас не подходят, мы всё понимаем. Дверь к новой записи остается открытой.",
+            slotId: candidate.interviewSlotId
           });
         }
       }
@@ -671,8 +622,8 @@ export function applyInterviewCommand(input, command, options = {}) {
       candidate.internshipStage = "not_ready";
       touch(candidate, now);
       appendNotification(state, candidate.id, "cooperation_not_started", now, {
-        title: "Сотрудничество не начато",
-        message: "Мы отметили, что после собеседования вы не продолжили сотрудничество с LOFT HALL. Можно коротко указать причину в мини-приложении.",
+        title: "Спасибо за встречу",
+        message: "Спасибо, что пришли и познакомились с LOFT HALL. Если после собеседования вы поняли, что формат или условия сейчас не подходят, мы всё понимаем. Дверь к новой записи остается открытой.",
         slotId: candidate.interviewSlotId
       });
       appendEvent(state, "candidate_left_after_interview", actor, now, {
@@ -731,19 +682,41 @@ export function applyInterviewCommand(input, command, options = {}) {
     case "rebook_interest": {
       const candidate = requireCandidate(state, payload.candidateId);
       if (payload.intent === "not_interested") {
+        const previousSlotId = candidate.interviewSlotId;
         candidate.status = "not_interested";
         candidate.candidateLayerStatus = "closed_not_interested";
         candidate.interviewSlotId = null;
+        candidate.attendanceStatus = "declined_before";
+        candidate.confirmationStatus = "declined";
+        appendNotification(state, candidate.id, "candidate_not_interested", now, {
+          title: "Спасибо за ответ",
+          message: "Мы сняли вас с записи. Если позже формат LOFT HALL снова станет актуален, можно вернуться к новой дате собеседования.",
+          slotId: previousSlotId
+        });
       } else if (payload.intent === "book_slot" && payload.slotId) {
         const slot = requireSlot(state, payload.slotId);
-        if (availableSeats(state, slot.id) < 1) throw new Error("No seats left for this slot");
+        if (availableSeatsForBooking(state, slot.id, candidate.id) < 1) throw new Error("No seats left for this slot");
         applyBooking(candidate, slot.id, now);
+        appendNotification(state, candidate.id, "booking_created", now, {
+          title: "Вы записаны на собеседование",
+          message: `${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. За день до собеседования придет запрос подтверждения.`,
+          slotId: slot.id
+        });
         appendBookingMaterials(state, candidate, slot, now);
       } else {
         candidate.status = "waitlist";
         candidate.candidateLayerStatus = "waiting_for_interview_date";
         candidate.interviewSlotId = null;
         candidate.waitlistJoinedAt = now;
+        candidate.waitlistTargetSlotId = null;
+        candidate.confirmationStatus = "not_requested";
+        candidate.attendanceStatus = "unknown";
+        candidate.interviewResult = "pending";
+        candidate.registrationStatus = "not_started";
+        appendNotification(state, candidate.id, "waitlist_joined", now, {
+          title: "Вы в ожидании новой даты",
+          message: "Когда появится следующая дата, пришлем уведомление с кнопкой записи."
+        });
       }
       touch(candidate, now);
       appendEvent(state, "candidate_rebook_interest", "candidate", now, {
@@ -765,6 +738,40 @@ export function applyInterviewCommand(input, command, options = {}) {
         reason: candidate.lossReason
       });
       result = { candidateId: candidate.id, reason: candidate.lossReason };
+      break;
+    }
+
+    case "clear_archive": {
+      const archivedSlotIds = new Set(state.slots.filter((slot) => slot.status === "completed").map((slot) => slot.id));
+      const removedCandidateIds = new Set(
+        state.candidates
+          .filter((candidate) => archivedSlotIds.has(candidate.interviewSlotId))
+          .map((candidate) => candidate.id)
+      );
+      state.slots = state.slots.filter((slot) => !archivedSlotIds.has(slot.id));
+      state.candidates = state.candidates.filter((candidate) => !removedCandidateIds.has(candidate.id));
+      state.notifications = state.notifications.filter(
+        (notification) => !archivedSlotIds.has(notification.slotId) && !removedCandidateIds.has(notification.candidateId)
+      );
+      state.events = state.events.filter(
+        (event) => !archivedSlotIds.has(event.slotId) && !removedCandidateIds.has(event.candidateId)
+      );
+      appendEvent(state, "archive_cleared", actor, now, {
+        removedSlots: archivedSlotIds.size,
+        removedCandidates: removedCandidateIds.size
+      });
+      result = { removedSlots: archivedSlotIds.size, removedCandidates: removedCandidateIds.size };
+      break;
+    }
+
+    case "clear_recruiter_data": {
+      const removedSlots = state.slots.length;
+      const removedCandidates = state.candidates.length;
+      state.slots = [];
+      state.candidates = [];
+      state.notifications = [];
+      state.events = [];
+      result = { removedSlots, removedCandidates };
       break;
     }
 
@@ -796,6 +803,7 @@ export function applyInterviewCommand(input, command, options = {}) {
 function defaultSettings() {
   return {
     autoMaterialDelayMinutes: 5,
+    developerTelegramIds: DEVELOPER_TELEGRAM_IDS,
     interviewVenues: [
       {
         id: "loft1",
@@ -911,11 +919,21 @@ function normalizeSettings(settings = {}) {
   return {
     ...defaults,
     ...settings,
+    developerTelegramIds: normalizeDeveloperTelegramIds(settings.developerTelegramIds || defaults.developerTelegramIds),
     interviewVenues: interviewVenues.map(normalizeVenue),
     directionMaterials: directionMaterials.map(normalizeDirectionMaterial),
     resourceSteps: resourceSteps.map(normalizeResourceStep),
     registrationLinks: registrationLinks.map(normalizeResourceStep)
   };
+}
+
+function normalizeDeveloperTelegramIds(ids = []) {
+  const values = Array.isArray(ids) ? ids : [ids];
+  const normalized = values.map((id) => clean(id)).filter(Boolean);
+  for (const id of DEVELOPER_TELEGRAM_IDS) {
+    if (!normalized.includes(id)) normalized.push(id);
+  }
+  return normalized;
 }
 
 function mergeDefaultResourceSteps(steps = [], defaults = []) {
@@ -1064,12 +1082,15 @@ function resolveDirectionMaterial(settings, value) {
 }
 
 function defaultBookingText(venue = {}) {
-  return DEFAULT_BOOKING_TEXT;
+  return "";
 }
 
 function normalizeBookingText(slot = {}, venue = {}) {
   const text = clean(slot.bookingText || slot.confirmationText);
-  const isLegacyText = text === LEGACY_BOOKING_TEXT || LEGACY_BOOKING_PREFIXES.some((prefix) => text.startsWith(prefix));
+  const isLegacyText =
+    text === LEGACY_BOOKING_TEXT ||
+    text.includes(LEGACY_LONG_BOOKING_MARKER) ||
+    LEGACY_BOOKING_PREFIXES.some((prefix) => text.startsWith(prefix));
   if (!text || isLegacyText) return defaultBookingText(venue);
   return text;
 }
@@ -1081,9 +1102,7 @@ function slotPlaceLine(slot = {}) {
 function bookingMaterialsMessage(slot = {}) {
   const lines = [];
   if (slot.bookingText) lines.push(slot.bookingText);
-  if (slot.venueAddress) lines.push(`Адрес: ${slot.venueAddress}.`);
   if (slot.directionsVideoUrl) lines.push(`Проходка: ${slot.directionsVideoUrl}`);
-  if (slot.directionsMaterial?.telegramFileId) lines.push("Проходка до площадки прикреплена отдельным видео.");
   return lines.join(" ");
 }
 
@@ -1270,15 +1289,28 @@ function applyBooking(candidate, slotId, now) {
   candidate.interviewSlotId = slotId;
   candidate.waitlistTargetSlotId = null;
   candidate.confirmationStatus = "not_requested";
+  candidate.confirmationRequestedAt = null;
+  candidate.confirmedAt = null;
   candidate.attendanceStatus = "unknown";
+  candidate.attendanceMarkedAt = null;
   candidate.interviewResult = "pending";
+  candidate.resultReason = "";
+  candidate.resultMarkedAt = null;
   candidate.registrationStatus = "not_started";
+  candidate.registrationInstructionsSentAt = null;
+  candidate.registrationConfirmedAt = null;
+  candidate.materialsSentAt = null;
+  candidate.materialsAvailableAt = null;
   candidate.resourcesSentAt = null;
   candidate.resourceStepsSent = [];
   candidate.resourceErrors = [];
   candidate.leftAfterInterviewAt = null;
+  candidate.declinedAt = null;
   candidate.internshipStage = "candidate_layer";
   candidate.lossReason = "";
+  candidate.lossReasonComment = "";
+  candidate.lossReasonMarkedAt = null;
+  candidate.linkClicks = [];
   touch(candidate, now);
 }
 
@@ -1302,10 +1334,11 @@ function notifyWaitlist(state, slotId, now) {
 
 function appendBookingMaterials(state, candidate, slot, now) {
   const routeMedia = routeMediaForSlot(slot);
-  if (!slot.bookingText && !slot.directionsVideoUrl && !slot.venueAddress && !routeMedia.length) return;
+  const message = bookingMaterialsMessage(slot);
+  if (!message && !routeMedia.length) return;
   appendNotification(state, candidate.id, "booking_materials", now, {
-    title: "Материалы к собеседованию",
-    message: bookingMaterialsMessage(slot),
+    title: message ? "Информация к собеседованию" : "",
+    message,
     slotId: slot.id,
     media: routeMedia
   });
@@ -1372,7 +1405,7 @@ function appendNotification(state, candidateId, type, now, payload = {}) {
     id: nextId("notif", state.notifications),
     candidateId,
     type,
-    title: payload.title || "Уведомление",
+    title: Object.hasOwn(payload, "title") ? clean(payload.title) : "Уведомление",
     message: payload.message || "",
     slotId: payload.slotId || null,
     media: normalizeNotificationMedia(payload.media),
@@ -1383,6 +1416,23 @@ function appendNotification(state, candidateId, type, now, payload = {}) {
     sentAt: null
   });
   state.notifications = state.notifications.slice(0, 200);
+}
+
+function normalizeNotificationRecord(notification = {}) {
+  const normalized = {
+    ...notification,
+    title: clean(notification.title),
+    message: clean(notification.message),
+    media: normalizeNotificationMedia(notification.media),
+    actions: normalizeNotificationActions(notification.actions)
+  };
+
+  if (normalized.type === "booking_materials" && normalized.message.includes(LEGACY_LONG_BOOKING_MARKER)) {
+    normalized.title = "";
+    normalized.message = "";
+  }
+
+  return normalized;
 }
 
 function normalizeNotificationMedia(media = []) {
@@ -1435,6 +1485,13 @@ function normalizeAttendance(attendance) {
 
 function availableSeats(state, slotId) {
   return deriveSlot(requireSlot(state, slotId), state.candidates, state.settings).availableSeats;
+}
+
+function availableSeatsForBooking(state, slotId, candidateId = "") {
+  const candidates = candidateId
+    ? state.candidates.filter((candidate) => candidate.id !== candidateId)
+    : state.candidates;
+  return deriveSlot(requireSlot(state, slotId), candidates, state.settings).availableSeats;
 }
 
 function findCandidateIndex(candidates, payload = {}) {
