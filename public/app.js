@@ -30,6 +30,9 @@ loadState();
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button || button.disabled) return;
+  if (button.closest("summary")) {
+    event.preventDefault();
+  }
 
   const role = button.dataset.role;
   const tab = button.dataset.tab;
@@ -573,11 +576,6 @@ function renderCandidateStatus(candidate) {
   }
 
   const slot = candidate.interviewSlotId ? state.slots.find((item) => item.id === candidate.interviewSlotId) : null;
-  const canConfirm = candidate.confirmationStatus === "pending";
-  const canWithdrawInterview =
-    !canConfirm &&
-    ["booked", "confirmed"].includes(candidate.status) &&
-    ["unknown", "not_requested", "pending", "confirmed"].includes(candidate.attendanceStatus || "unknown");
   const canRebook = ["no_show", "declined_before_interview", "no_confirmation"].includes(candidate.status);
 
   return `
@@ -602,17 +600,6 @@ function renderCandidateStatus(candidate) {
         <div class="candidate-stage-label">Этап: <b>${escapeHtml(stageLabel(candidate))}</b></div>
         ${renderStageTrack(candidate)}
       </div>
-      ${canConfirm ? `
-        <div class="candidate-actions">
-          <button type="button" class="success" data-action="candidate-confirm" data-decision="yes">Да, приду</button>
-          <button type="button" class="danger" data-action="candidate-confirm" data-decision="no">Нет, не смогу</button>
-        </div>
-      ` : ""}
-      ${canWithdrawInterview ? `
-        <div class="candidate-actions">
-          <button type="button" class="danger" data-action="candidate-confirm" data-decision="no">Не смогу прийти</button>
-        </div>
-      ` : ""}
       ${canRebook ? `
         <div class="candidate-actions">
           <button type="button" class="primary" data-action="rebook-interest" data-intent="waitlist">Уведомить о следующем</button>
@@ -716,11 +703,12 @@ function renderJournalTab() {
   const slotCandidates = state.candidates.filter((candidate) => candidate.interviewSlotId === ui.selectedSlotId);
   const candidates = filterCandidates(slotCandidates);
   const slot = state.slots.find((item) => item.id === ui.selectedSlotId);
-  const confirmationsRequested = slotConfirmationRequested(ui.selectedSlotId);
+  const confirmation = slotConfirmationState(ui.selectedSlotId);
   const slotOpen = slot?.status === "open";
   const unmarked = candidates.filter(isUnmarkedCandidate);
   const arrived = candidates.filter(isArrivedCandidate);
   const arrivedAll = slotCandidates.filter(isArrivedCandidate);
+  const refusedAfterInterview = candidates.filter(isPostInterviewRefusal);
   const missed = candidates.filter(isMissedCandidate);
 
   return `
@@ -736,12 +724,12 @@ function renderJournalTab() {
         </label>
         <button
           type="button"
-          class="${confirmationsRequested ? "success" : "secondary"}${actionDoneClass(confirmationsRequested, "send-due-confirmations", { slotId: ui.selectedSlotId })}"
+          class="secondary${actionFeedbackClass("send-due-confirmations", { slotId: ui.selectedSlotId })}"
           data-action="send-due-confirmations"
           data-slot-id="${escapeAttr(ui.selectedSlotId)}"
-          ${!slotOpen ? "disabled aria-disabled=\"true\"" : ""}
+          ${!slotOpen || confirmation.sendableCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
         >
-          ${confirmationsRequested ? "Подтверждение отправлено" : "Подтверждение за день"}
+          Подтверждение за день
         </button>
         <button
           type="button"
@@ -753,10 +741,12 @@ function renderJournalTab() {
           Собес завершен
         </button>
       </div>
+      ${renderConfirmationStatusPanel(confirmation)}
       ${renderJournalGroup("Не отмечены", unmarked, "wait")}
       ${renderSlotResourceControls(slot, arrivedAll)}
       ${renderJournalGroup("Пришли на собес", arrived, "ok")}
-      ${renderJournalGroup("Не пришли / отказ", missed, "bad")}
+      ${renderJournalGroup("Отказ после собеса", refusedAfterInterview, "bad")}
+      ${renderJournalGroup("Не пришли / слились", missed, "bad")}
     </section>
   `;
 }
@@ -775,8 +765,45 @@ function renderJournalGroup(title, candidates, tone) {
   `;
 }
 
-function slotConfirmationRequested(slotId) {
-  return state.candidates.some((candidate) => candidate.interviewSlotId === slotId && candidate.confirmationRequestedAt);
+function slotConfirmationState(slotId) {
+  const candidates = state.candidates.filter((candidate) => candidate.interviewSlotId === slotId);
+  const relevant = candidates.filter(
+    (candidate) =>
+      ["booked", "confirmation_pending", "confirmed", "declined_before_interview"].includes(candidate.status) ||
+      ["pending", "confirmed", "declined", "no_response"].includes(candidate.confirmationStatus)
+  );
+  const sendable = relevant.filter(
+    (candidate) =>
+      ["booked", "confirmation_pending"].includes(candidate.status) &&
+      !["confirmed", "declined"].includes(candidate.confirmationStatus)
+  );
+
+  return {
+    total: relevant.length,
+    sendableCount: sendable.length,
+    confirmedCount: relevant.filter((candidate) => candidate.confirmationStatus === "confirmed").length,
+    declinedCount: relevant.filter(
+      (candidate) => candidate.confirmationStatus === "declined" || candidate.attendanceStatus === "declined_before"
+    ).length,
+    pendingCount: relevant.filter((candidate) => candidate.confirmationStatus === "pending").length,
+    notRequestedCount: relevant.filter(
+      (candidate) => !candidate.confirmationRequestedAt && candidate.confirmationStatus === "not_requested"
+    ).length,
+    noResponseCount: relevant.filter((candidate) => candidate.confirmationStatus === "no_response").length
+  };
+}
+
+function renderConfirmationStatusPanel(confirmation) {
+  if (!confirmation.total) return "";
+  return `
+    <div class="confirmation-status-panel" aria-label="Статусы подтверждения">
+      <span class="confirmation-mini ok">Подтвердили: ${confirmation.confirmedCount}</span>
+      <span class="confirmation-mini bad">Слились: ${confirmation.declinedCount}</span>
+      <span class="confirmation-mini wait">Ждут: ${confirmation.pendingCount}</span>
+      <span class="confirmation-mini accent">Без запроса: ${confirmation.notRequestedCount}</span>
+      ${confirmation.noResponseCount ? `<span class="confirmation-mini bad">Не ответили: ${confirmation.noResponseCount}</span>` : ""}
+    </div>
+  `;
 }
 
 function waitlistNotifiedForSlot(slotId) {
@@ -869,6 +896,28 @@ function renderCandidateResourceExceptions(candidate) {
   `;
 }
 
+function renderConfirmationMini(candidate) {
+  const badge = confirmationBadge(candidate);
+  return `<span class="confirmation-mini ${badge.tone}">${escapeHtml(badge.label)}</span>`;
+}
+
+function confirmationBadge(candidate) {
+  if (candidate.status === "left_after_interview") return { label: "Отказ после собеса", tone: "bad" };
+  if (candidate.attendanceStatus === "no_show" && candidate.confirmationStatus === "confirmed") {
+    return { label: "Подтвердил, не пришел", tone: "bad" };
+  }
+  if (candidate.confirmationStatus === "confirmed") return { label: "Подтвердил выход", tone: "ok" };
+  if (candidate.confirmationStatus === "declined" || candidate.attendanceStatus === "declined_before") {
+    return { label: "Слился", tone: "bad" };
+  }
+  if (candidate.confirmationStatus === "pending") return { label: "Ждет ответ", tone: "wait" };
+  if (candidate.confirmationStatus === "no_response" || candidate.attendanceStatus === "no_confirmation") {
+    return { label: "Не ответил", tone: "bad" };
+  }
+  if (candidate.confirmationRequestedAt) return { label: "Запрос отправлен", tone: "accent" };
+  return { label: "Без запроса", tone: "muted" };
+}
+
 function renderRecruiterCandidate(candidate, index = 0) {
   const arrived = isArrivedCandidate(candidate);
   const canContinue = arrived && candidate.status !== "left_after_interview";
@@ -879,10 +928,14 @@ function renderRecruiterCandidate(candidate, index = 0) {
       <div class="candidate-mark-row ${isLongCandidateName(candidate.name) ? "long-name" : ""}">
         <details class="recruiter-person-details">
           <summary class="candidate-name-summary">
-            <span class="candidate-title-line">
-              <span class="candidate-number">${index + 1}</span>
-              <b class="name">${escapeHtml(candidate.name)}</b>
+            <span class="candidate-title-stack">
+              <span class="candidate-title-line">
+                <span class="candidate-number">${index + 1}</span>
+                <b class="name">${escapeHtml(candidate.name)}</b>
+              </span>
+              ${renderConfirmationMini(candidate)}
             </span>
+            ${renderAttendanceControl(candidate)}
           </summary>
           <div class="candidate-details-body">
             ${renderCandidateMeta(candidate)}
@@ -890,7 +943,6 @@ function renderRecruiterCandidate(candidate, index = 0) {
             ${renderAttendanceCorrection(candidate)}
           </div>
         </details>
-        ${renderAttendanceControl(candidate)}
       </div>
       <div class="compact-person-row">
         ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
@@ -898,7 +950,7 @@ function renderRecruiterCandidate(candidate, index = 0) {
       ${renderCandidateResourceExceptions(candidate)}
       ${canContinue ? `
         <div class="candidate-actions">
-          <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Не продолжил</button>
+          <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Отказ</button>
         </div>
       ` : ""}
     </article>
@@ -1191,7 +1243,7 @@ function renderResourceCandidate(candidate, index = 0) {
       </div>
       ${renderCandidateResourceExceptions(candidate)}
       <div class="candidate-actions">
-        <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Не продолжил</button>
+        <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Отказ</button>
         <button type="button" class="quiet" data-action="use-candidate" data-candidate-id="${escapeAttr(candidate.id)}">Открыть</button>
       </div>
     </article>
@@ -1293,12 +1345,16 @@ function isUnmarkedCandidate(candidate) {
   return ["unknown", "not_requested", ""].includes(candidate.attendanceStatus || "unknown");
 }
 
+function isPostInterviewRefusal(candidate) {
+  return candidate.status === "left_after_interview";
+}
+
 function isArrivedCandidate(candidate) {
-  return candidate.attendanceStatus === "arrived";
+  return candidate.attendanceStatus === "arrived" && !isPostInterviewRefusal(candidate);
 }
 
 function isMissedCandidate(candidate) {
-  return ["no_show", "declined_before", "no_confirmation"].includes(candidate.attendanceStatus);
+  return !isPostInterviewRefusal(candidate) && ["no_show", "declined_before", "no_confirmation"].includes(candidate.attendanceStatus);
 }
 
 function candidateCardTone(candidate) {
@@ -1650,7 +1706,7 @@ function statusLabel(status) {
     declined_before_interview: "Отказ заранее",
     no_confirmation: "Не подтвердил",
     attended: "Пришел",
-    left_after_interview: "Не продолжил",
+    left_after_interview: "Отказ",
     no_show: "Не пришел",
     registration_pending: "Регистрация",
     registered: "Зарегистрирован",
@@ -1668,7 +1724,7 @@ function stageLabel(candidate) {
   if (candidate.status === "confirmation_pending") return "Ждет подтверждение";
   if (candidate.status === "confirmed") return "Подтвердил участие";
   if (candidate.status === "attended") return "Пришел на собес";
-  if (candidate.status === "left_after_interview") return "Не продолжил сотрудничество";
+  if (candidate.status === "left_after_interview") return "Отказ после собеседования";
   if (candidate.status === "registration_pending") return "Регистрация";
   if (candidate.status === "ready_for_internship") return "Стажировка";
   if (["no_show", "declined_before_interview", "no_confirmation"].includes(candidate.status)) return "Повторная запись или отказ";
@@ -1686,7 +1742,7 @@ function candidateLayerLabel(candidate) {
     interview_no_confirmation: "Не дал подтверждение",
     interview_attended: "Пришел на собеседование",
     resources_sent: "Ресурсы отправлены",
-    left_after_interview: "Не продолжил сотрудничество",
+    left_after_interview: "Отказ после собеседования",
     interview_no_show: "Не пришел на собеседование",
     interview_passed: "После собеседования",
     ready_for_internship: "Готов к стажировке",
@@ -1696,7 +1752,7 @@ function candidateLayerLabel(candidate) {
 }
 
 function journalStatusLabel(candidate) {
-  if (candidate.status === "left_after_interview") return "Пришел, но не продолжил";
+  if (candidate.status === "left_after_interview") return "Отказ после собеса";
   if (candidate.attendanceStatus === "arrived" && candidate.confirmationStatus === "confirmed") return "Подтвердил и пришел";
   if (candidate.attendanceStatus === "no_show" && candidate.confirmationStatus === "confirmed") return "Подтвердил, но не пришел";
   if (candidate.attendanceStatus === "declined_before" || candidate.confirmationStatus === "declined") return "Заранее отказался";
@@ -1707,6 +1763,7 @@ function journalStatusLabel(candidate) {
 }
 
 function attendanceMarkLabel(candidate) {
+  if (candidate.status === "left_after_interview") return "Отказ";
   if (candidate.attendanceStatus === "arrived") return "Пришел";
   if (candidate.attendanceStatus === "declined_before") return "Отказ";
   if (candidate.attendanceStatus === "no_confirmation") return "Не подтвердил";
@@ -1718,7 +1775,7 @@ function attendanceLabel(value) {
     arrived: "Пришли",
     no_show: "Не пришли",
     no_confirmation: "Не подтвердили",
-    left_after: "Не продолжили"
+    left_after: "Отказ после собеса"
   };
   return labels[value] || value || "Статус";
 }
@@ -1761,7 +1818,7 @@ function eventTypeLabel(type) {
     resources_sent: "Ресурсы отправлены",
     resource_step_sent: "Ресурс отправлен",
     slot_completed: "Дата закрыта",
-    candidate_left_after_interview: "Не продолжил",
+    candidate_left_after_interview: "Отказ после собеса",
     registration_materials_sent: "Материалы регистрации",
     registration_marked: "Регистрация",
     slot_registered_all: "Все зареганы",

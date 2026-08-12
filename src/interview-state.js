@@ -278,7 +278,8 @@ export function applyInterviewCommand(input, command, options = {}) {
     case "request_confirmation":
     case "send_due_confirmations": {
       const targets = getCandidateTargets(state, payload).filter((candidate) =>
-        ["booked", "confirmed", "confirmation_pending"].includes(candidate.status)
+        ["booked", "confirmation_pending"].includes(candidate.status) &&
+        !["confirmed", "declined"].includes(candidate.confirmationStatus)
       );
       for (const candidate of targets) {
         candidate.status = "confirmation_pending";

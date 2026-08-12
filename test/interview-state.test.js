@@ -107,6 +107,15 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     { now: "2026-08-12T10:00:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "confirmed");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "send_due_confirmations", payload: { slotId: "slot-002" } },
+    { now: "2026-08-12T10:05:00.000Z" }
+  ));
+  assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "confirmed");
+  assert.equal(state.candidates.find((item) => item.id === candidate.id).confirmationStatus, "confirmed");
+
   assert.equal(
     state.notifications.filter((item) => item.candidateId === candidate.id && item.type === "confirmation_materials").length,
     0
