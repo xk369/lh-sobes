@@ -45,6 +45,14 @@ test("new interview date automatically notifies waitlist candidates", () => {
 
 test("candidate can confirm, miss interview, and return to waitlist", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
+  assert.equal(
+    state.settings.directionMaterials.find((item) => item.id === "loft_23_route").telegramFileId,
+    "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA"
+  );
+  assert.equal(
+    state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramFileId,
+    "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA"
+  );
 
   ({ state } = applyInterviewCommand(
     state,
@@ -71,6 +79,9 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   );
   assert.equal(bookingMaterials.slotId, "slot-002");
   assert.match(bookingMaterials.message, /2-й Кожуховский проезд/);
+  assert.equal(bookingMaterials.media.length, 1);
+  assert.equal(bookingMaterials.media[0].type, "document");
+  assert.equal(bookingMaterials.media[0].fileId, "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA");
 
   ({ state } = applyInterviewCommand(
     state,

@@ -498,15 +498,20 @@ function renderCandidateView(candidate) {
 
 function renderCandidateForm(candidate) {
   const profile = candidate || {};
+  const telegramUser = telegramWebAppUser();
+  const telegramId = profile.telegramId || telegramUser?.id || "";
+  const telegramTag = profile.telegram || (telegramUser?.username ? `@${telegramUser.username}` : "");
+  const telegramName = profile.name || [telegramUser?.first_name, telegramUser?.last_name].filter(Boolean).join(" ");
   return `
     <form id="candidate-form" class="form-grid candidate-short-form">
+      <input type="hidden" name="telegramId" value="${escapeAttr(telegramId)}" />
       <label>
         ФИО
-        <input name="name" value="${escapeAttr(profile.name)}" autocomplete="name" required placeholder="Иванов Иван" />
+        <input name="name" value="${escapeAttr(telegramName)}" autocomplete="name" required placeholder="Иванов Иван" />
       </label>
       <label>
         Telegram
-        <input name="telegram" value="${escapeAttr(profile.telegram)}" autocomplete="username" required placeholder="@username" />
+        <input name="telegram" value="${escapeAttr(telegramTag)}" autocomplete="username" required placeholder="@username" />
       </label>
       <label>
         Телефон
@@ -517,6 +522,10 @@ function renderCandidateForm(candidate) {
       </div>
     </form>
   `;
+}
+
+function telegramWebAppUser() {
+  return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
 }
 
 function renderCandidateSlot(slot) {
@@ -1551,6 +1560,7 @@ function scheduleCandidateAutosave() {
         action: "upsert_candidate",
         payload: {
           candidateId: ui.candidateId || undefined,
+          telegramId: data.telegramId?.trim(),
           name: data.name.trim(),
           phone: data.phone.trim(),
           telegram: data.telegram?.trim(),

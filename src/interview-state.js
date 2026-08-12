@@ -1,5 +1,6 @@
 const ACTIVE_INTERVIEW_RESULTS = new Set(["fit", "not_fit", "self_declined", "russian_low", "other"]);
 const LOSS_REASONS = new Set(["date_time", "location", "circumstances", "conditions", "other_offer", "other"]);
+const ROUTE_FILE_ID = "BQACAgIAAxkBAAEN-k5qfIMhAAEX8Gze0K4MJb99RKa6PfwAAmyjAAIyAeBLJj6vMEwvGvU9BA";
 const SLOT_HOLDING_STATUSES = new Set([
   "booked",
   "confirmation_pending",
@@ -604,17 +605,36 @@ function defaultSettings() {
       {
         id: "loft2",
         name: "LOFT#2",
-        address: "ул. Ленинская Слобода, 26с11"
+        address: "ул. Ленинская Слобода, 26с11",
+        directionsMaterialId: "loft_23_route"
       },
       {
         id: "loft3",
         name: "LOFT#3",
-        address: "ул. Ленинская Слобода, 26с15"
+        address: "ул. Ленинская Слобода, 26с15",
+        directionsMaterialId: "loft_23_route"
       },
       {
         id: "loft4",
         name: "LOFT#4",
-        address: "2-й Кожуховский проезд, 29к6"
+        address: "2-й Кожуховский проезд, 29к6",
+        directionsMaterialId: "loft_4_route"
+      }
+    ],
+    directionMaterials: [
+      {
+        id: "loft_23_route",
+        label: "Проходка LOFT 2/3",
+        caption: "Проходка до LOFT 2/3",
+        telegramFileId: ROUTE_FILE_ID,
+        telegramMethod: "document"
+      },
+      {
+        id: "loft_4_route",
+        label: "Проходка LOFT 4",
+        caption: "Проходка до LOFT 4",
+        telegramFileId: ROUTE_FILE_ID,
+        telegramMethod: "document"
       }
     ],
     resourceSteps: [
@@ -665,9 +685,15 @@ function normalizeSettings(settings = {}) {
   const resourceSteps = mergeDefaultResourceSteps(Array.isArray(settings.resourceSteps) && settings.resourceSteps.length
     ? settings.resourceSteps
     : defaults.resourceSteps, defaults.resourceSteps);
-  const interviewVenues = Array.isArray(settings.interviewVenues) && settings.interviewVenues.length
+  const interviewVenues = mergeDefaultVenues(Array.isArray(settings.interviewVenues) && settings.interviewVenues.length
     ? settings.interviewVenues
-    : defaults.interviewVenues;
+    : defaults.interviewVenues, defaults.interviewVenues);
+  const directionMaterials = mergeDefaultDirectionMaterials(
+    Array.isArray(settings.directionMaterials) && settings.directionMaterials.length
+      ? settings.directionMaterials
+      : defaults.directionMaterials,
+    defaults.directionMaterials
+  );
   const registrationLinks = mergeDefaultResourceSteps(
     Array.isArray(settings.registrationLinks) && settings.registrationLinks.length
       ? settings.registrationLinks
@@ -679,6 +705,7 @@ function normalizeSettings(settings = {}) {
     ...defaults,
     ...settings,
     interviewVenues: interviewVenues.map(normalizeVenue),
+    directionMaterials: directionMaterials.map(normalizeDirectionMaterial),
     resourceSteps: resourceSteps.map(normalizeResourceStep),
     registrationLinks: registrationLinks.map(normalizeResourceStep)
   };
@@ -697,11 +724,52 @@ function mergeDefaultResourceSteps(steps = [], defaults = []) {
   return merged;
 }
 
+function mergeDefaultVenues(venues = [], defaults = []) {
+  const defaultsById = new Map(defaults.map((venue) => [clean(venue.id), venue]));
+  const merged = Array.isArray(venues)
+    ? venues.map((venue) => ({ ...(defaultsById.get(clean(venue?.id)) || {}), ...venue }))
+    : [];
+  const knownIds = new Set(merged.map((venue) => clean(venue?.id)));
+  for (const defaultVenue of defaults) {
+    const id = clean(defaultVenue.id);
+    if (!knownIds.has(id)) {
+      merged.push(defaultVenue);
+      knownIds.add(id);
+    }
+  }
+  return merged;
+}
+
+function mergeDefaultDirectionMaterials(materials = [], defaults = []) {
+  const merged = Array.isArray(materials) ? [...materials] : [];
+  const knownIds = new Set(merged.map((material) => clean(material?.id || material?.type)));
+  for (const defaultMaterial of defaults) {
+    const id = clean(defaultMaterial.id || defaultMaterial.type);
+    if (!knownIds.has(id)) {
+      merged.push(defaultMaterial);
+      knownIds.add(id);
+    }
+  }
+  return merged;
+}
+
 function normalizeVenue(venue = {}) {
   return {
     id: clean(venue.id),
     name: clean(venue.name || venue.venue || "LOFT HALL"),
-    address: clean(venue.address)
+    address: clean(venue.address),
+    directionsMaterialId: clean(venue.directionsMaterialId || venue.routeMaterialId)
+  };
+}
+
+function normalizeDirectionMaterial(material = {}) {
+  return {
+    id: clean(material.id || material.type || "route"),
+    label: clean(material.label || material.name || "Проходка"),
+    caption: clean(material.caption || material.description || "Проходка до площадки"),
+    telegramFileId: clean(material.telegramFileId || material.fileId || material.file_id),
+    telegramMethod: clean(material.telegramMethod || material.method || "document") || "document",
+    publicUrl: clean(material.publicUrl || material.url)
   };
 }
 
@@ -758,7 +826,13 @@ function resolveVenueReference(settings, value) {
   const normalizedValue = normalizeVenueKey(value);
   const venue = venues.find((item) => item.id === value || normalizeVenueKey(item.name) === normalizedValue);
   if (venue) return normalizeVenue(venue);
-  return { id: "", name: clean(value) || "LOFT HALL", address: "" };
+  return { id: "", name: clean(value) || "LOFT HALL", address: "", directionsMaterialId: "" };
+}
+
+function resolveDirectionMaterial(settings, value) {
+  const materials = Array.isArray(settings?.directionMaterials) ? settings.directionMaterials : defaultSettings().directionMaterials;
+  const material = materials.find((item) => item.id === value);
+  return material ? normalizeDirectionMaterial(material) : null;
 }
 
 function defaultBookingText(venue = {}) {
@@ -777,6 +851,7 @@ function bookingMaterialsMessage(slot = {}) {
   if (slot.bookingText) lines.push(slot.bookingText);
   if (slot.venueAddress) lines.push(`Адрес: ${slot.venueAddress}.`);
   if (slot.directionsVideoUrl) lines.push(`Проходка: ${slot.directionsVideoUrl}`);
+  if (slot.directionsMaterial?.telegramFileId) lines.push("Проходка до площадки прикреплена отдельным файлом.");
   return lines.join(" ");
 }
 
@@ -859,6 +934,7 @@ function normalizeCandidate(candidate) {
 function deriveSlot(slot, candidates, settings = defaultSettings()) {
   const bySlot = candidates.filter((candidate) => candidate.interviewSlotId === slot.id);
   const venue = resolveVenueReference(settings, slot.venueId || slot.venue);
+  const directionsMaterial = resolveDirectionMaterial(settings, slot.directionsMaterialId || venue.directionsMaterialId);
   const bookedCount = bySlot.filter((candidate) => SLOT_HOLDING_STATUSES.has(candidate.status)).length;
   const confirmedCount = bySlot.filter((candidate) => candidate.confirmationStatus === "confirmed").length;
   const confirmationPendingCount = bySlot.filter((candidate) => candidate.confirmationStatus === "pending").length;
@@ -876,6 +952,8 @@ function deriveSlot(slot, candidates, settings = defaultSettings()) {
     venueId: clean(slot.venueId || venue.id),
     venue: clean(slot.venue || venue.name) || "LOFT HALL",
     venueAddress: clean(slot.venueAddress || venue.address),
+    directionsMaterialId: clean(slot.directionsMaterialId || venue.directionsMaterialId || directionsMaterial?.id),
+    directionsMaterial,
     templateCleared: Boolean(slot.templateCleared),
     bookingText: slot.templateCleared ? "" : clean(slot.bookingText || slot.confirmationText) || defaultBookingText(venue),
     directionsVideoUrl: slot.templateCleared ? "" : clean(slot.directionsVideoUrl || slot.confirmationVideoUrl),
@@ -991,12 +1069,26 @@ function notifyWaitlist(state, slotId, now) {
 }
 
 function appendBookingMaterials(state, candidate, slot, now) {
-  if (!slot.bookingText && !slot.directionsVideoUrl && !slot.venueAddress) return;
+  const routeMedia = routeMediaForSlot(slot);
+  if (!slot.bookingText && !slot.directionsVideoUrl && !slot.venueAddress && !routeMedia.length) return;
   appendNotification(state, candidate.id, "booking_materials", now, {
     title: "Материалы к собеседованию",
     message: bookingMaterialsMessage(slot),
-    slotId: slot.id
+    slotId: slot.id,
+    media: routeMedia
   });
+}
+
+function routeMediaForSlot(slot = {}) {
+  const material = slot.directionsMaterial;
+  if (!material?.telegramFileId) return [];
+  return [
+    {
+      type: material.telegramMethod || "document",
+      fileId: material.telegramFileId,
+      caption: material.caption || material.label || "Проходка до площадки"
+    }
+  ];
 }
 
 function registrationTargets(state, slotId) {
@@ -1046,12 +1138,25 @@ function appendNotification(state, candidateId, type, now, payload = {}) {
     title: payload.title || "Уведомление",
     message: payload.message || "",
     slotId: payload.slotId || null,
-    status: "sent",
-    channel: "telegram_mock",
+    media: normalizeNotificationMedia(payload.media),
+    status: "pending",
+    channel: "telegram",
     createdAt: now,
-    sentAt: now
+    sentAt: null
   });
   state.notifications = state.notifications.slice(0, 200);
+}
+
+function normalizeNotificationMedia(media = []) {
+  return Array.isArray(media)
+    ? media
+        .map((item) => ({
+          type: clean(item.type || "document"),
+          fileId: clean(item.fileId || item.telegramFileId || item.file_id),
+          caption: clean(item.caption || "")
+        }))
+        .filter((item) => item.fileId)
+    : [];
 }
 
 function appendEvent(state, type, actor, now, details = {}) {

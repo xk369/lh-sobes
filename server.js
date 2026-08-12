@@ -12,6 +12,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 const DATA_DIR = path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "interviews.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
 const SHARED_VENUE_DIR = path.resolve(
   __dirname,
   "../loft_hall_internship_unified_migration_integrate/public/assets/venues"
@@ -51,8 +52,9 @@ const server = createServer(async (req, res) => {
       const command = await readJson(req);
       const state = await loadState();
       const next = applyInterviewCommand(state, command);
-      await saveState(next.state);
-      sendJson(res, { ok: true, ...next });
+      const deliveredState = await deliverPendingNotifications(next.state);
+      await saveState(deliveredState);
+      sendJson(res, { ok: true, state: deliveredState, result: next.result });
       return;
     }
 
@@ -106,6 +108,84 @@ async function loadState() {
 
 async function saveState(state) {
   await writeFile(DATA_FILE, `${JSON.stringify(deriveState(state), null, 2)}\n`, "utf8");
+}
+
+async function deliverPendingNotifications(state) {
+  const nextState = deriveState(state);
+  const now = new Date().toISOString();
+  const pending = nextState.notifications.filter((notification) => notification.status === "pending");
+  if (!pending.length) return nextState;
+
+  if (!TELEGRAM_BOT_TOKEN) {
+    for (const notification of pending) {
+      notification.status = "sent";
+      notification.channel = "telegram_mock";
+      notification.sentAt = notification.sentAt || now;
+      notification.deliveryNote = "TELEGRAM_BOT_TOKEN is not configured";
+    }
+    return deriveState(nextState);
+  }
+
+  for (const notification of pending) {
+    const candidate = nextState.candidates.find((item) => item.id === notification.candidateId);
+    if (!candidate?.telegramId) {
+      notification.status = "failed";
+      notification.channel = "telegram";
+      notification.deliveryError = "telegram_id_missing";
+      continue;
+    }
+
+    try {
+      const messageText = [notification.title, notification.message].filter(Boolean).join("\n\n");
+      if (messageText) {
+        await sendTelegramApi("sendMessage", {
+          chat_id: candidate.telegramId,
+          text: messageText,
+          disable_web_page_preview: true
+        });
+      }
+
+      for (const media of notification.media || []) {
+        await sendTelegramMedia(candidate.telegramId, media);
+      }
+
+      notification.status = "sent";
+      notification.channel = "telegram";
+      notification.sentAt = now;
+      delete notification.deliveryError;
+    } catch (error) {
+      notification.status = "failed";
+      notification.channel = "telegram";
+      notification.deliveryError = error.message || "telegram_delivery_failed";
+    }
+  }
+
+  return deriveState(nextState);
+}
+
+async function sendTelegramMedia(chatId, media) {
+  const method = media.type === "video" ? "sendVideo" : "sendDocument";
+  const fileField = method === "sendVideo" ? "video" : "document";
+  await sendTelegramApi(method, {
+    chat_id: chatId,
+    [fileField]: media.fileId,
+    caption: media.caption || undefined,
+    supports_streaming: method === "sendVideo" ? true : undefined
+  });
+}
+
+async function sendTelegramApi(method, payload) {
+  const cleanPayload = Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== ""));
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleanPayload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.description || `Telegram ${method} failed`);
+  }
+  return data.result;
 }
 
 function servePublic(urlPath, res, headOnly = false) {
