@@ -490,7 +490,7 @@ function render() {
 
 function renderCandidateView(candidate) {
   const hasBooking = candidateHasActiveBooking(candidate);
-  const openSlots = hasBooking ? [] : state.slots.filter((slot) => slot.status === "open");
+  const openSlots = hasBooking ? [] : uniqueOpenCandidateSlots();
   const bookedSlot = hasBooking ? state.slots.find((slot) => slot.id === candidate.interviewSlotId) : null;
 
   return `
@@ -587,6 +587,18 @@ function renderCandidateSlot(slot) {
       </button>
     </article>
   `;
+}
+
+function uniqueOpenCandidateSlots() {
+  const seen = new Set();
+  return state.slots
+    .filter((slot) => slot.status === "open")
+    .filter((slot) => {
+      const key = [slot.date, slot.time, slot.venueId || slot.venue].map((value) => String(value || "").trim().toLowerCase()).join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function renderNotification(notification) {
@@ -1060,12 +1072,17 @@ function renderDatesTab() {
             <button type="button" class="quiet" data-action="clear-slot-template">Очистить шаблон</button>
             <button
               type="submit"
-              class="primary${actionFeedbackClass("create-slot-submit")}"
+              class="primary${createFeedback ? " action-done" : ""}${actionFeedbackClass("create-slot-submit")}"
               data-action="create-slot-submit"
             >
               ${createFeedback ? `Создано · уведомлено ${createFeedback.notifiedCount}` : "Создать и уведомить лист"}
             </button>
           </div>
+          ${createFeedback ? `
+            <div class="span-2 form-feedback success-feedback" role="status">
+              Дата создана. Лист ожидания уведомлен: ${createFeedback.notifiedCount}
+            </div>
+          ` : ""}
         </form>
       </section>
 
