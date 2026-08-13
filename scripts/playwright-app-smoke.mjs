@@ -24,7 +24,8 @@ const server = spawn(process.execPath, ["server.js"], {
     HOST: "127.0.0.1",
     PORT: String(port),
     DATA_FILE: dataFile,
-    TELEGRAM_BOT_TOKEN: ""
+    TELEGRAM_BOT_TOKEN: "",
+    DISABLE_CONFIRMATION_SCHEDULER: "true"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -81,6 +82,7 @@ try {
   await page.screenshot({ path: path.join(tmpDir, "app-dates-mobile.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Журнал", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Подтверждение за день", exact: true }).count(), 0, "manual confirmation button should be hidden");
   await page.locator("[data-candidate-search]").fill(candidateName);
   const unmarkedCard = page.locator(".recruiter-candidate-card", { hasText: candidateName }).first();
   await unmarkedCard.waitFor({ timeout: 10000 });

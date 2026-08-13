@@ -29,7 +29,7 @@ test("new interview date automatically notifies waitlist candidates", () => {
   assert.equal(result.result.notifiedCount, waitlistBefore);
   assert.equal(slot.title, "Собеседование LOFT HALL");
   assert.equal(slot.venue, "LOFT#3");
-  assert.equal(slot.venueAddress, "ул. Ленинская Слобода, 26с15");
+  assert.equal(slot.venueAddress, "ул. Ленинская Слобода, 26с11");
   assert.equal(slot.bookingText, "Вход со стороны главной проходной.");
   assert.equal(slot.directionsVideoUrl, "https://example.com/loft3-route");
 
@@ -41,6 +41,10 @@ test("new interview date automatically notifies waitlist candidates", () => {
     (item) => item.candidateId === "cand-003" && item.type === "waitlist_new_slot"
   );
   assert.equal(notification.slotId, result.result.slotId);
+  assert.deepEqual(
+    notification.actions.map((action) => action.callbackData),
+    [`waitlist:book:${result.result.slotId}:cand-003`, `waitlist:stay:${result.result.slotId}:cand-003`]
+  );
 });
 
 test("active interview date cannot be duplicated by date and time", () => {
@@ -133,6 +137,10 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     state.settings.interviewVenues.find((item) => item.id === "loft1").address,
     "ул. Ленинская Слобода, 26, стр. 35"
   );
+  assert.equal(
+    state.settings.interviewVenues.find((item) => item.id === "loft3").address,
+    "ул. Ленинская Слобода, 26с11"
+  );
 
   ({ state } = applyInterviewCommand(
     state,
@@ -159,7 +167,9 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   );
   assert.equal(bookingMaterials.slotId, "slot-002");
   assert.equal(bookingMaterials.title, "");
-  assert.equal(bookingMaterials.message, "");
+  assert.match(bookingMaterials.message, /Ближайшее собеседование состоится/);
+  assert.match(bookingMaterials.message, /При себе необходимо иметь только паспорт и ручку/);
+  assert.match(bookingMaterials.message, /два комплекта униформы/);
   assert.equal(bookingMaterials.media.length, 1);
   assert.equal(bookingMaterials.media[0].type, "video");
   assert.equal(bookingMaterials.media[0].fileId, "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E");
@@ -185,6 +195,20 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     { now: "2026-08-12T10:00:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "confirmed");
+  assert.equal(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "confirmation_request").actions.length,
+    0
+  );
+
+  const secondConfirmation = applyInterviewCommand(
+    state,
+    { action: "candidate_confirm", payload: { candidateId: candidate.id, decision: "no" } },
+    { now: "2026-08-12T10:01:00.000Z" }
+  );
+  state = secondConfirmation.state;
+  assert.equal(secondConfirmation.result.alreadyAnswered, true);
+  assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "confirmed");
+  assert.equal(state.candidates.find((item) => item.id === candidate.id).confirmationStatus, "confirmed");
 
   ({ state } = applyInterviewCommand(
     state,
@@ -216,6 +240,64 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     { now: "2026-08-13T12:12:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).status, "waitlist");
+});
+
+test("waitlist candidate can book from new-date notification or stay in queue", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  let result = applyInterviewCommand(
+    state,
+    {
+      action: "create_slot",
+      payload: {
+        date: "2026-08-20",
+        time: "17:00",
+        venueId: "loft2",
+        seats: 8
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  );
+  state = result.state;
+  const slotId = result.result.slotId;
+
+  result = applyInterviewCommand(
+    state,
+    { action: "waitlist_slot_response", payload: { candidateId: "cand-003", slotId, intent: "stay" } },
+    { now: "2026-08-10T10:02:00.000Z" }
+  );
+  state = result.state;
+  const stayed = state.candidates.find((candidate) => candidate.id === "cand-003");
+  assert.equal(stayed.status, "waitlist");
+  assert.equal(stayed.waitlistTargetSlotId, slotId);
+  assert.equal(
+    state.notifications.find((item) => item.candidateId === "cand-003" && item.type === "waitlist_new_slot").actions.length,
+    0
+  );
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "notify_waitlist", payload: { slotId } },
+    { now: "2026-08-10T10:05:00.000Z" }
+  ));
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "waitlist_slot_response", payload: { candidateId: "cand-003", slotId, intent: "book" } },
+    { now: "2026-08-10T10:06:00.000Z" }
+  ));
+
+  const booked = state.candidates.find((candidate) => candidate.id === "cand-003");
+  assert.equal(booked.status, "booked");
+  assert.equal(booked.interviewSlotId, slotId);
+
+  result = applyInterviewCommand(
+    state,
+    { action: "waitlist_slot_response", payload: { candidateId: "cand-003", slotId, intent: "stay" } },
+    { now: "2026-08-10T10:07:00.000Z" }
+  );
+  state = result.state;
+  assert.equal(result.result.alreadyHandled, true);
+  assert.equal(state.candidates.find((candidate) => candidate.id === "cand-003").status, "booked");
 });
 
 test("candidate can rebook to another open slot and free previous seat", () => {
@@ -259,6 +341,52 @@ test("candidate can rebook to another open slot and free previous seat", () => {
   assert.equal(rebooked.attendanceStatus, "unknown");
   assert.equal(slotTwoAfter.availableSeats, slotTwoBefore.availableSeats + 1);
   assert.equal(slotOneAfter.availableSeats, slotOneBefore.availableSeats - 1);
+});
+
+test("due confirmation request is filtered by interview date and sent once", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "book_slot",
+      payload: {
+        slotId: "slot-002",
+        candidate: {
+          telegramId: "555555557",
+          telegram: "@due_candidate",
+          name: "Кандидат Подтверждение",
+          phone: "+7 900 555-55-57",
+          source: "Telegram"
+        }
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  ));
+
+  const candidate = state.candidates.find((item) => item.telegramId === "555555557");
+  let result = applyInterviewCommand(
+    state,
+    { action: "send_due_confirmations", payload: { dueDate: "2026-08-16" } },
+    { now: "2026-08-15T18:00:00.000Z" }
+  );
+  state = result.state;
+
+  assert.equal(result.result.requestedCount, 1);
+  assert.equal(state.candidates.find((item) => item.id === candidate.id).confirmationStatus, "pending");
+
+  result = applyInterviewCommand(
+    state,
+    { action: "send_due_confirmations", payload: { dueDate: "2026-08-16" } },
+    { now: "2026-08-15T18:01:00.000Z" }
+  );
+  state = result.state;
+
+  assert.equal(result.result.requestedCount, 0);
+  assert.equal(
+    state.notifications.filter((item) => item.candidateId === candidate.id && item.type === "confirmation_request").length,
+    1
+  );
 });
 
 test("candidate telegram is required for shared candidate records", () => {

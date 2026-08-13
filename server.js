@@ -16,6 +16,9 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || process.env.APP_URL || "https://sobes.151.244.243.164.sslip.io";
 const TELEGRAM_ACTION_SECRET = process.env.TELEGRAM_ACTION_SECRET || TELEGRAM_BOT_TOKEN || "lh-sobes-local";
+const CONFIRMATION_SEND_HOUR_MOSCOW = 21;
+const CONFIRMATION_SCHEDULER_INTERVAL_MS = Number(process.env.CONFIRMATION_SCHEDULER_INTERVAL_MS || 60_000);
+const DISABLE_CONFIRMATION_SCHEDULER = process.env.DISABLE_CONFIRMATION_SCHEDULER === "true";
 const SHARED_VENUE_DIR = path.resolve(
   __dirname,
   "../loft_hall_internship_unified_migration_integrate/public/assets/venues"
@@ -99,6 +102,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`LOFT HALL interviews MVP: http://${HOST}:${PORT}`);
+  startConfirmationScheduler();
 });
 
 server.on("error", (error) => {
@@ -155,12 +159,17 @@ async function deliverPendingNotifications(state) {
       if (messageText) {
         const chunks = splitTelegramText(messageText);
         for (const [index, text] of chunks.entries()) {
-          await sendTelegramApi("sendMessage", {
+          const replyMarkup = index === chunks.length - 1 ? replyMarkupForNotification(notification, candidate) : undefined;
+          const message = await sendTelegramApi("sendMessage", {
             chat_id: candidate.telegramId,
             text,
             disable_web_page_preview: true,
-            reply_markup: index === chunks.length - 1 ? replyMarkupForNotification(notification, candidate) : undefined
+            reply_markup: replyMarkup
           });
+          if (replyMarkup && message?.message_id) {
+            notification.telegramMessageId = message.message_id;
+            notification.telegramChatId = String(message.chat?.id || candidate.telegramId);
+          }
         }
       }
 
@@ -183,11 +192,17 @@ async function deliverPendingNotifications(state) {
 }
 
 async function handleTelegramActionUrl(url, res) {
+  const kind = url.searchParams.get("kind") || "confirm";
   const candidateId = url.searchParams.get("candidateId") || "";
-  const decision = url.searchParams.get("decision") || "";
   const signature = url.searchParams.get("signature") || "";
 
-  if (!candidateId || !["yes", "no"].includes(decision) || !isValidTelegramActionSignature(candidateId, decision, signature)) {
+  if (kind === "waitlist") {
+    await handleTelegramWaitlistActionUrl(url, res, candidateId, signature);
+    return;
+  }
+
+  const decision = url.searchParams.get("decision") || "";
+  if (!candidateId || !["yes", "no"].includes(decision) || !isValidTelegramConfirmationSignature(candidateId, decision, signature)) {
     sendTelegramActionPage(res, "Ссылка недействительна", "Откройте мини-приложение и повторите действие.", 400);
     return;
   }
@@ -199,14 +214,45 @@ async function handleTelegramActionUrl(url, res) {
     payload: { candidateId, decision, actor: "telegram_link" }
   });
   const deliveredState = await deliverPendingNotifications(next.state);
+  await clearLatestTelegramKeyboard(deliveredState, candidateId, "confirmation_request");
+  await saveState(deliveredState);
+
+  const savedDecision = next.result.decision || decision;
+  sendTelegramActionPage(
+    res,
+    next.result.alreadyAnswered ? "Ответ уже сохранен" : savedDecision === "yes" ? "Участие подтверждено" : "Отказ сохранен",
+    savedDecision === "yes"
+      ? "Спасибо. Рекрутер увидит подтверждение в журнале."
+      : "Мы сняли вас с этой даты. Можно вернуться к записи в мини-приложении."
+  );
+}
+
+async function handleTelegramWaitlistActionUrl(url, res, candidateId, signature) {
+  const intent = url.searchParams.get("intent") || "";
+  const slotId = url.searchParams.get("slotId") || "";
+  if (!candidateId || !slotId || !["book", "stay"].includes(intent) || !isValidTelegramWaitlistSignature(candidateId, intent, slotId, signature)) {
+    sendTelegramActionPage(res, "Ссылка недействительна", "Откройте мини-приложение и повторите действие.", 400);
+    return;
+  }
+
+  const state = await loadState();
+  const next = applyInterviewCommand(state, {
+    action: "waitlist_slot_response",
+    actor: "telegram_link",
+    payload: { candidateId, slotId, intent, actor: "telegram_link" }
+  });
+  const deliveredState = await deliverPendingNotifications(next.state);
+  await clearLatestTelegramKeyboard(deliveredState, candidateId, "waitlist_new_slot", slotId);
   await saveState(deliveredState);
 
   sendTelegramActionPage(
     res,
-    decision === "yes" ? "Участие подтверждено" : "Отказ сохранен",
-    decision === "yes"
-      ? "Спасибо. Рекрутер увидит подтверждение в журнале."
-      : "Мы сняли вас с этой даты. Можно вернуться к записи в мини-приложении."
+    next.result.alreadyHandled ? "Действие уже обработано" : intent === "book" ? "Запись сохранена" : "Оставили вас в очереди",
+    next.result.alreadyHandled
+      ? "Текущий статус кандидата уже сохранен в системе."
+      : intent === "book"
+        ? "Вы записаны на эту дату. Подробности отправлены в чат."
+        : "Хорошо, вы остаетесь в листе ожидания следующей даты."
   );
 }
 
@@ -215,7 +261,29 @@ async function handleTelegramUpdate(update) {
   if (!callback) return;
 
   const data = String(callback.data || "");
-  const [scope, decision, candidateId] = data.split(":");
+  const [scope, action, firstId, secondId] = data.split(":");
+  if (scope === "waitlist" && ["book", "stay"].includes(action) && firstId && secondId) {
+    const slotId = firstId;
+    const candidateId = secondId;
+    const state = await loadState();
+    const next = applyInterviewCommand(state, {
+      action: "waitlist_slot_response",
+      actor: "telegram",
+      payload: { candidateId, slotId, intent: action, actor: "telegram" }
+    });
+    const deliveredState = await deliverPendingNotifications(next.state);
+    await clearCallbackMessageKeyboard(callback);
+    await clearLatestTelegramKeyboard(deliveredState, candidateId, "waitlist_new_slot", slotId);
+    await saveState(deliveredState);
+    await answerTelegramCallback(
+      callback.id,
+      next.result.alreadyHandled ? "Действие уже было обработано" : action === "book" ? "Запись сохранена" : "Вы остаетесь в очереди"
+    );
+    return;
+  }
+
+  const decision = action;
+  const candidateId = firstId;
   if (scope !== "confirm" || !["yes", "no"].includes(decision) || !candidateId) {
     await answerTelegramCallback(callback.id, "Команда не распознана");
     return;
@@ -228,8 +296,13 @@ async function handleTelegramUpdate(update) {
     payload: { candidateId, decision, actor: "telegram" }
   });
   const deliveredState = await deliverPendingNotifications(next.state);
+  await clearCallbackMessageKeyboard(callback);
+  await clearLatestTelegramKeyboard(deliveredState, candidateId, "confirmation_request");
   await saveState(deliveredState);
-  await answerTelegramCallback(callback.id, decision === "yes" ? "Участие подтверждено" : "Отказ сохранен");
+  await answerTelegramCallback(
+    callback.id,
+    next.result.alreadyAnswered ? "Ответ уже был сохранен" : decision === "yes" ? "Участие подтверждено" : "Отказ сохранен"
+  );
 }
 
 async function answerTelegramCallback(callbackQueryId, text) {
@@ -264,37 +337,153 @@ function replyMarkupForNotification(notification, candidate) {
   const buttons = actions
     .filter((action) => action.label && action.callbackData)
     .map((action) => {
-      const confirmationUrl = confirmationActionUrl(action, candidate);
-      if (confirmationUrl) return { text: action.label, url: confirmationUrl };
+      const actionUrl = telegramActionUrl(action, candidate);
+      if (actionUrl) return { text: action.label, url: actionUrl };
       return { text: action.label, callback_data: action.callbackData };
     });
   return buttons.length ? { inline_keyboard: [buttons] } : undefined;
 }
 
-function confirmationActionUrl(action, candidate) {
-  const [scope, decision, candidateId] = String(action.callbackData || "").split(":");
-  if (scope !== "confirm" || !["yes", "no"].includes(decision) || !candidateId || candidate?.id !== candidateId) {
-    return "";
-  }
+function telegramActionUrl(action, candidate) {
+  const [scope, actionName, firstId, secondId] = String(action.callbackData || "").split(":");
   const target = new URL("/api/telegram/action", PUBLIC_APP_URL);
-  target.searchParams.set("candidateId", candidateId);
-  target.searchParams.set("decision", decision);
-  target.searchParams.set("signature", signTelegramAction(candidateId, decision));
-  return target.toString();
+  if (scope === "confirm" && ["yes", "no"].includes(actionName) && firstId && candidate?.id === firstId) {
+    target.searchParams.set("candidateId", firstId);
+    target.searchParams.set("decision", actionName);
+    target.searchParams.set("signature", signTelegramConfirmationAction(firstId, actionName));
+    return target.toString();
+  }
+  if (scope === "waitlist" && ["book", "stay"].includes(actionName) && firstId && secondId && candidate?.id === secondId) {
+    target.searchParams.set("kind", "waitlist");
+    target.searchParams.set("candidateId", secondId);
+    target.searchParams.set("slotId", firstId);
+    target.searchParams.set("intent", actionName);
+    target.searchParams.set("signature", signTelegramWaitlistAction(secondId, actionName, firstId));
+    return target.toString();
+  }
+  return "";
 }
 
-function signTelegramAction(candidateId, decision) {
+function signTelegramConfirmationAction(candidateId, decision) {
   return createHmac("sha256", TELEGRAM_ACTION_SECRET)
     .update(`${candidateId}:${decision}`)
     .digest("hex")
     .slice(0, 32);
 }
 
-function isValidTelegramActionSignature(candidateId, decision, signature) {
-  const expected = signTelegramAction(candidateId, decision);
+function signTelegramWaitlistAction(candidateId, intent, slotId) {
+  return createHmac("sha256", TELEGRAM_ACTION_SECRET)
+    .update(`waitlist:${candidateId}:${intent}:${slotId}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function isValidTelegramConfirmationSignature(candidateId, decision, signature) {
+  const expected = signTelegramConfirmationAction(candidateId, decision);
   const actual = String(signature || "");
   if (actual.length !== expected.length) return false;
   return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+function isValidTelegramWaitlistSignature(candidateId, intent, slotId, signature) {
+  const expected = signTelegramWaitlistAction(candidateId, intent, slotId);
+  const actual = String(signature || "");
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+async function clearCallbackMessageKeyboard(callback) {
+  const chatId = callback?.message?.chat?.id;
+  const messageId = callback?.message?.message_id;
+  if (!chatId || !messageId || !TELEGRAM_BOT_TOKEN) return;
+  await sendTelegramApi("editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: [] }
+  }).catch(() => {});
+}
+
+async function clearLatestTelegramKeyboard(state, candidateId, type, slotId = null) {
+  const candidate = state.candidates.find((item) => item.id === candidateId);
+  const notification = state.notifications.find(
+    (item) =>
+      item.candidateId === candidateId &&
+      item.type === type &&
+      (!slotId || item.slotId === slotId) &&
+      item.telegramMessageId
+  );
+  if (!notification) return;
+  notification.actions = [];
+  notification.keyboardClearedAt = notification.keyboardClearedAt || new Date().toISOString();
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    await sendTelegramApi("editMessageReplyMarkup", {
+      chat_id: notification.telegramChatId || candidate?.telegramId,
+      message_id: notification.telegramMessageId,
+      reply_markup: { inline_keyboard: [] }
+    });
+    delete notification.keyboardClearError;
+  } catch (error) {
+    notification.keyboardClearError = error.message || "telegram_keyboard_clear_failed";
+  }
+}
+
+function startConfirmationScheduler() {
+  if (DISABLE_CONFIRMATION_SCHEDULER) return;
+  const run = () => {
+    runScheduledConfirmations().catch((error) => {
+      console.error(`confirmation scheduler failed: ${error.message || error}`);
+    });
+  };
+  run();
+  const timer = setInterval(run, CONFIRMATION_SCHEDULER_INTERVAL_MS);
+  timer.unref?.();
+}
+
+async function runScheduledConfirmations(nowDate = new Date()) {
+  const nowMoscow = moscowDateTimeParts(nowDate);
+  if (nowMoscow.hour < CONFIRMATION_SEND_HOUR_MOSCOW) return;
+  const dueDate = addDaysToMoscowDate(nowMoscow.date, 1);
+
+  const state = await loadState();
+  const next = applyInterviewCommand(
+    state,
+    {
+      action: "send_due_confirmations",
+      actor: "system",
+      payload: { dueDate, actor: "system" }
+    },
+    { now: nowDate.toISOString() }
+  );
+  if (!next.result.requestedCount) return;
+
+  const deliveredState = await deliverPendingNotifications(next.state);
+  await saveState(deliveredState);
+  console.log(`confirmation scheduler sent ${next.result.requestedCount} reminders for ${dueDate}`);
+}
+
+function moscowDateTimeParts(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    date: `${byType.year}-${byType.month}-${byType.day}`,
+    hour: Number(byType.hour),
+    minute: Number(byType.minute)
+  };
+}
+
+function addDaysToMoscowDate(date, days) {
+  const next = new Date(`${date}T00:00:00+03:00`);
+  next.setUTCDate(next.getUTCDate() + Number(days || 0));
+  return moscowDateTimeParts(next).date;
 }
 
 async function sendTelegramMedia(chatId, media) {

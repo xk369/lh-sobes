@@ -9,6 +9,7 @@ const LEGACY_BOOKING_PREFIXES = [
   "Вы записаны на собеседование:",
   "Ждем вас на собеседовании:"
 ];
+const LEGACY_LOFT3_ADDRESS = "ул. Ленинская Слобода, 26с15";
 const DEVELOPER_TELEGRAM_IDS = ["1294774551"];
 const WORK_LINKS_MESSAGE = `Бот для записи на смену
 @LoftHallStaffBot
@@ -407,11 +408,56 @@ export function applyInterviewCommand(input, command, options = {}) {
       break;
     }
 
+    case "waitlist_slot_response": {
+      const candidate = requireCandidate(state, payload.candidateId);
+      const slot = requireSlot(state, payload.slotId);
+      const intent = payload.intent === "book" ? "book" : "stay";
+      let alreadyHandled = false;
+
+      if (intent === "book") {
+        const alreadyBooked = candidate.interviewSlotId === slot.id && SLOT_HOLDING_STATUSES.has(candidate.status);
+        if (!alreadyBooked) {
+          if (candidate.status !== "waitlist" && candidate.interviewSlotId) {
+            alreadyHandled = true;
+          } else {
+            if (slot.status !== "open") throw new Error("Slot is not open");
+            if (availableSeatsForBooking(state, slot.id, candidate.id) < 1) throw new Error("No seats left for this slot");
+            applyBooking(candidate, slot.id, now);
+            appendNotification(state, candidate.id, "booking_created", now, {
+              title: "Вы записаны на собеседование",
+              message: `${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. За день до собеседования придет запрос подтверждения.`,
+              slotId: slot.id
+            });
+            appendBookingMaterials(state, candidate, slot, now);
+          }
+        }
+      } else if (candidate.status === "waitlist") {
+        candidate.status = "waitlist";
+        candidate.candidateLayerStatus = "waiting_for_interview_date";
+        candidate.waitlistTargetSlotId = slot.id;
+        candidate.lastWaitlistNotifiedAt = candidate.lastWaitlistNotifiedAt || now;
+      } else {
+        alreadyHandled = true;
+      }
+
+      clearLatestNotificationActions(state, candidate.id, "waitlist_new_slot", slot.id, now);
+      touch(candidate, now);
+      appendEvent(state, "candidate_waitlist_slot_response", "candidate", now, {
+        candidateId: candidate.id,
+        slotId: slot.id,
+        intent,
+        alreadyHandled
+      });
+      result = { candidateId: candidate.id, slotId: slot.id, intent, alreadyHandled };
+      break;
+    }
+
     case "request_confirmation":
     case "send_due_confirmations": {
       const targets = getCandidateTargets(state, payload).filter((candidate) =>
         ["booked", "confirmation_pending"].includes(candidate.status) &&
-        !["confirmed", "declined"].includes(candidate.confirmationStatus)
+        !["confirmed", "declined"].includes(candidate.confirmationStatus) &&
+        !candidate.confirmationRequestedAt
       );
       for (const candidate of targets) {
         candidate.status = "confirmation_pending";
@@ -435,6 +481,7 @@ export function applyInterviewCommand(input, command, options = {}) {
       appendEvent(state, "confirmation_requested", actor, now, {
         slotId: payload.slotId || null,
         candidateId: payload.candidateId || null,
+        dueDate: payload.dueDate || null,
         requestedCount: targets.length
       });
       result = { requestedCount: targets.length };
@@ -443,6 +490,20 @@ export function applyInterviewCommand(input, command, options = {}) {
 
     case "candidate_confirm": {
       const candidate = requireCandidate(state, payload.candidateId);
+      if (["confirmed", "declined"].includes(candidate.confirmationStatus)) {
+        clearLatestNotificationActions(state, candidate.id, "confirmation_request", candidate.interviewSlotId, now);
+        appendEvent(state, "candidate_confirmation_answer_ignored", actor, now, {
+          candidateId: candidate.id,
+          decision: payload.decision,
+          savedDecision: candidate.confirmationStatus === "confirmed" ? "yes" : "no"
+        });
+        result = {
+          candidateId: candidate.id,
+          decision: candidate.confirmationStatus === "confirmed" ? "yes" : "no",
+          alreadyAnswered: true
+        };
+        break;
+      }
       const wasDeclined =
         candidate.status === "declined_before_interview" || candidate.confirmationStatus === "declined";
       if (payload.decision === "yes") {
@@ -464,6 +525,7 @@ export function applyInterviewCommand(input, command, options = {}) {
           });
         }
       }
+      clearLatestNotificationActions(state, candidate.id, "confirmation_request", candidate.interviewSlotId, now);
       touch(candidate, now);
       appendEvent(state, "candidate_confirmation_answered", actor, now, {
         candidateId: candidate.id,
@@ -826,7 +888,7 @@ function defaultSettings() {
       {
         id: "loft3",
         name: "LOFT#3",
-        address: "ул. Ленинская Слобода, 26с15",
+        address: "ул. Ленинская Слобода, 26с11",
         directionsMaterialId: "loft_23_route"
       },
       {
@@ -964,7 +1026,14 @@ function mergeDefaultResourceSteps(steps = [], defaults = []) {
 function mergeDefaultVenues(venues = [], defaults = []) {
   const defaultsById = new Map(defaults.map((venue) => [clean(venue.id), venue]));
   const merged = Array.isArray(venues)
-    ? venues.map((venue) => ({ ...(defaultsById.get(clean(venue?.id)) || {}), ...venue }))
+    ? venues.map((venue) => {
+        const id = clean(venue?.id);
+        const mergedVenue = { ...(defaultsById.get(id) || {}), ...venue };
+        if (id === "loft3" && clean(mergedVenue.address) === LEGACY_LOFT3_ADDRESS) {
+          mergedVenue.address = defaultsById.get(id)?.address || mergedVenue.address;
+        }
+        return mergedVenue;
+      })
     : [];
   const knownIds = new Set(merged.map((venue) => clean(venue?.id)));
   for (const defaultVenue of defaults) {
@@ -1105,11 +1174,58 @@ function slotPlaceLine(slot = {}) {
   return [slot.venue, slot.venueAddress].filter(Boolean).join(", ") || "LOFT HALL";
 }
 
+function resolveSlotVenueAddress(slot = {}, venue = {}) {
+  if (venue.address && slot.venueId) return clean(venue.address);
+  return clean(slot.venueAddress || venue.address);
+}
+
+function formatInterviewDateTimeForMessage(slot = {}) {
+  const date = clean(slot.date);
+  const time = clean(slot.time);
+  if (!date) return time || "в назначенное время";
+
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) {
+    return [date, time].filter(Boolean).join(" в ");
+  }
+
+  const formattedDate = new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Moscow"
+  }).format(new Date(`${date}T00:00:00+03:00`));
+
+  return time ? `${formattedDate} в ${time}` : formattedDate;
+}
+
+function normalizeLoftNameForMessage(value) {
+  const venue = clean(value).replace(/LOFT\s*#\s*/i, "LOFT#");
+  return venue || "LOFT HALL";
+}
+
 function bookingMaterialsMessage(slot = {}) {
-  const lines = [];
-  if (slot.bookingText) lines.push(slot.bookingText);
-  if (slot.directionsVideoUrl) lines.push(`Проходка: ${slot.directionsVideoUrl}`);
-  return lines.join(" ");
+  if (slot.templateCleared) return "";
+  const venue = normalizeLoftNameForMessage(slot.venue);
+  const address = clean(slot.venueAddress) || "адрес площадки уточнит рекрутер";
+  const date = formatInterviewDateTimeForMessage(slot);
+  return `Ближайшее собеседование состоится ${date} в ${venue} по адресу: ${address}
+
+Ждём вас СТРОГО ко времени на КПП, напишите в этот чат, как будете на месте (проходить в залы без сопровождения менеджера запрещено, могут идти мероприятия). При себе необходимо иметь только паспорт и ручку.
+
+Собеседование проходит в ГРУППОВОМ формате, будет несколько человек.
+
+Для выхода на мероприятия вам потребуется приобрести два комплекта униформы.
+
+Форму не нужно брать с собой!
+
+«Это для вас напоминание, что такая униформа у вас должна быть в наличии уже. Если ее нет, то нужно приобрести»
+
+Это строго:
+1. Классика (строгая белая рубашка, черные классические брюки, черные ботинки под кожу или лоферы)
+2. Черные джинсы, черные или белые кроссовки, бандана и цепь (выдадим фирменную рубашку)
+
+Ответим на ваши вопросы при встрече.`;
 }
 
 function createCandidate(payload, now) {
@@ -1208,7 +1324,7 @@ function deriveSlot(slot, candidates, settings = defaultSettings()) {
     title: clean(slot.title) || "Собеседование LOFT HALL",
     venueId: clean(slot.venueId || venue.id),
     venue: clean(slot.venue || venue.name) || "LOFT HALL",
-    venueAddress: clean(slot.venueAddress || venue.address),
+    venueAddress: resolveSlotVenueAddress(slot, venue),
     directionsMaterialId: clean(slot.directionsMaterialId || venue.directionsMaterialId || directionsMaterial?.id),
     directionsMaterial,
     templateCleared: Boolean(slot.templateCleared),
@@ -1332,7 +1448,11 @@ function notifyWaitlist(state, slotId, now) {
     appendNotification(state, candidate.id, "waitlist_new_slot", now, {
       title: "Открыта новая дата собеседования",
       message: `${slot.date} в ${slot.time}, ${slotPlaceLine(slot)}. Можно записаться на эту дату.`,
-      slotId: slot.id
+      slotId: slot.id,
+      actions: [
+        waitlistAction(candidate.id, slot.id, "book"),
+        waitlistAction(candidate.id, slot.id, "stay")
+      ]
     });
   }
   return waitlist.length;
@@ -1343,7 +1463,7 @@ function appendBookingMaterials(state, candidate, slot, now) {
   const message = bookingMaterialsMessage(slot);
   if (!message && !routeMedia.length) return;
   appendNotification(state, candidate.id, "booking_materials", now, {
-    title: message ? "Информация к собеседованию" : "",
+    title: "",
     message,
     slotId: slot.id,
     media: routeMedia
@@ -1402,6 +1522,10 @@ function getCandidateTargets(state, payload) {
   if (payload.candidateId) return [requireCandidate(state, payload.candidateId)];
   if (payload.slotId) {
     return state.candidates.filter((candidate) => candidate.interviewSlotId === payload.slotId);
+  }
+  if (payload.dueDate) {
+    const dueSlotIds = new Set(state.slots.filter((slot) => slot.date === payload.dueDate).map((slot) => slot.id));
+    return state.candidates.filter((candidate) => dueSlotIds.has(candidate.interviewSlotId));
   }
   return state.candidates.filter((candidate) => ["booked", "confirmation_pending", "confirmed"].includes(candidate.status));
 }
@@ -1473,6 +1597,27 @@ function confirmationAction(candidateId, decision) {
     label: decision === "yes" ? "Да, приду" : "Нет, не смогу",
     callbackData: `confirm:${decision}:${candidateId}`
   };
+}
+
+function waitlistAction(candidateId, slotId, intent) {
+  return {
+    label: intent === "book" ? "Записаться на дату" : "Остаться в очереди",
+    callbackData: `waitlist:${intent}:${slotId}:${candidateId}`
+  };
+}
+
+function clearLatestNotificationActions(state, candidateId, type, slotId, now) {
+  const notification = state.notifications.find(
+    (item) =>
+      item.candidateId === candidateId &&
+      item.type === type &&
+      (!slotId || item.slotId === slotId) &&
+      Array.isArray(item.actions) &&
+      item.actions.length > 0
+  );
+  if (!notification) return;
+  notification.actions = [];
+  notification.keyboardClearedAt = now;
 }
 
 function appendEvent(state, type, actor, now, details = {}) {

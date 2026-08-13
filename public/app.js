@@ -90,6 +90,16 @@ document.addEventListener("click", async (event) => {
       return;
     }
 
+    if (action === "waitlist-slot-response") {
+      await runCommand("waitlist_slot_response", {
+        candidateId: button.dataset.candidateId || requireCurrentCandidateId(),
+        slotId: button.dataset.slotId,
+        intent: button.dataset.intent
+      }, button);
+      showToast(button.dataset.intent === "book" ? "Запись на дату сохранена" : "Оставили в очереди");
+      return;
+    }
+
     if (action === "rebook-interest") {
       await runCommand("rebook_interest", {
         candidateId: requireCurrentCandidateId(),
@@ -586,6 +596,12 @@ function uniqueOpenCandidateSlots() {
 
 function renderNotification(notification) {
   const slot = notification.slotId ? state.slots.find((item) => item.id === notification.slotId) : null;
+  const candidate = state.candidates.find((item) => item.id === notification.candidateId);
+  const canAnswerWaitlist =
+    slot &&
+    notification.type === "waitlist_new_slot" &&
+    candidate?.status === "waitlist" &&
+    !notification.keyboardClearedAt;
   return `
     <article class="notice notification-card">
       <div class="queue-notice-head">
@@ -593,9 +609,28 @@ function renderNotification(notification) {
         <span>${escapeHtml(formatDateTime(notification.createdAt))}</span>
       </div>
       <p>${escapeHtml(notification.message)}</p>
-      ${slot && notification.type === "waitlist_new_slot" ? `
+      ${canAnswerWaitlist ? `
         <div class="button-row">
-          <button type="button" class="primary" data-action="book-slot" data-slot-id="${escapeAttr(slot.id)}">Записаться на эту дату</button>
+          <button
+            type="button"
+            class="primary"
+            data-action="waitlist-slot-response"
+            data-intent="book"
+            data-slot-id="${escapeAttr(slot.id)}"
+            data-candidate-id="${escapeAttr(notification.candidateId)}"
+          >
+            Записаться на эту дату
+          </button>
+          <button
+            type="button"
+            class="secondary"
+            data-action="waitlist-slot-response"
+            data-intent="stay"
+            data-slot-id="${escapeAttr(slot.id)}"
+            data-candidate-id="${escapeAttr(notification.candidateId)}"
+          >
+            Остаться в очереди
+          </button>
         </div>
       ` : ""}
     </article>
@@ -731,15 +766,6 @@ function renderJournalTab() {
           Поиск
           <input data-candidate-search value="${escapeAttr(ui.recruiterSearch)}" placeholder="ФИО, Telegram, телефон" />
         </label>
-        <button
-          type="button"
-          class="secondary${actionFeedbackClass("send-due-confirmations", { slotId: ui.selectedSlotId })}"
-          data-action="send-due-confirmations"
-          data-slot-id="${escapeAttr(ui.selectedSlotId)}"
-          ${!slotOpen || confirmation.sendableCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
-        >
-          Подтверждение за день
-        </button>
         <button
           type="button"
           class="danger${actionFeedbackClass("complete-slot", { slotId: ui.selectedSlotId })}"
