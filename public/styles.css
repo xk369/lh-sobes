@@ -1381,7 +1381,7 @@ button.is-loading:disabled {
 }
 
 .slot-form-actions {
-  grid-template-columns: minmax(130px, 0.7fr) minmax(0, 1.3fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .panel-title-stack {
@@ -1395,6 +1395,25 @@ button.is-loading:disabled {
   font-size: 12px;
   font-weight: 850;
   line-height: 1.3;
+}
+
+.waitlist-panel .panel-head {
+  align-items: center;
+}
+
+.waitlist-panel h2 {
+  font-size: 20px;
+}
+
+.waitlist-action {
+  width: fit-content;
+  min-width: 118px;
+  min-height: 38px;
+  border-radius: 999px;
+  padding-inline: 13px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .resource-progress-panel {

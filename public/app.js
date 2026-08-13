@@ -54,17 +54,6 @@ document.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "clear-slot-template") {
-      const form = button.closest("#slot-form");
-      if (!form) return;
-      form.elements.bookingText.value = "";
-      form.elements.directionsVideoUrl.value = "";
-      form.elements.templateCleared.value = "true";
-      rememberActionFeedback(button);
-      showToast("Шаблон очищен");
-      return;
-    }
-
     if (action === "show-stage-help") {
       ui.stageHelpKey = button.dataset.stageKey || "";
       render();
@@ -286,13 +275,6 @@ document.addEventListener("input", (event) => {
     return;
   }
 
-  if (event.target.matches("#slot-form [name='bookingText'], #slot-form [name='directionsVideoUrl']")) {
-    const form = event.target.closest("#slot-form");
-    if (form?.elements.templateCleared) {
-      form.elements.templateCleared.value = "";
-    }
-  }
-
   if (event.target.closest("#candidate-form")) {
     scheduleCandidateAutosave();
   }
@@ -323,9 +305,6 @@ document.addEventListener("submit", async (event) => {
       data.time = `${data.hour}:${data.minute}`;
       delete data.hour;
       delete data.minute;
-      if (data.bookingText?.trim() || data.directionsVideoUrl?.trim()) {
-        data.templateCleared = "";
-      }
       const response = await runCommand("create_slot", data, submitButton);
       ui.createSlotFeedback = {
         notifiedCount: response.result.notifiedCount || 0,
@@ -452,8 +431,12 @@ function render() {
     return;
   }
 
-  if (!activeSlots().some((slot) => slot.id === ui.selectedSlotId)) {
-    ui.selectedSlotId = firstActiveSlot()?.id || "";
+  const active = activeSlots();
+  const visibleActive = visibleActiveSlots();
+  if (!active.some((slot) => slot.id === ui.selectedSlotId)) {
+    ui.selectedSlotId = visibleActive[0]?.id || active[0]?.id || "";
+  } else if (visibleActive.length && !visibleActive.some((slot) => slot.id === ui.selectedSlotId)) {
+    ui.selectedSlotId = visibleActive[0].id;
   }
 
   const candidate = getCurrentCandidate();
@@ -842,6 +825,23 @@ function activeSlots() {
   return state.slots.filter((slot) => slot.status !== "completed");
 }
 
+function visibleActiveSlots() {
+  return collapseEmptyDuplicateSlots(activeSlots());
+}
+
+function collapseEmptyDuplicateSlots(slots) {
+  const groups = new Map();
+  for (const slot of slots) {
+    const key = [slot.date, slot.time, slot.venueId || slot.venue].map((value) => String(value || "").trim().toLowerCase()).join("|");
+    groups.set(key, [...(groups.get(key) || []), slot]);
+  }
+
+  return Array.from(groups.values()).flatMap((group) => {
+    const withCandidates = group.filter((slot) => candidatesForSlot(slot.id).length > 0);
+    return withCandidates.length ? withCandidates : [group[0]];
+  });
+}
+
 function archivedSlots() {
   return state.slots.filter((slot) => slot.status === "completed");
 }
@@ -959,7 +959,7 @@ function renderRecruiterCandidate(candidate, index = 0) {
                 <span class="candidate-number">${index + 1}</span>
                 <b class="name">${escapeHtml(candidate.name)}</b>
               </span>
-              ${renderConfirmationMini(candidate)}
+              ${marked ? "" : renderConfirmationMini(candidate)}
             </span>
             ${renderAttendanceControl(candidate)}
           </summary>
@@ -1028,9 +1028,9 @@ function renderAttendanceCorrection(candidate) {
 
 function renderDatesTab() {
   const waitlist = state.candidates.filter((candidate) => candidate.status === "waitlist");
-  const selectedSlot = activeSlots().find((slot) => slot.id === ui.selectedSlotId);
+  const selectedSlot = visibleActiveSlots().find((slot) => slot.id === ui.selectedSlotId);
   const waitlistNotified = waitlistNotifiedForSlot(ui.selectedSlotId);
-  const visibleActiveSlots = activeSlots();
+  const shownActiveSlots = visibleActiveSlots();
   const visibleArchivedSlots = filterArchivedSlots(archivedSlots());
   const createFeedback = ui.createSlotFeedback;
 
@@ -1039,7 +1039,6 @@ function renderDatesTab() {
       <section class="panel">
         <h2>Добавить дату</h2>
         <form id="slot-form" class="form-grid two">
-          <input type="hidden" name="templateCleared" value="" />
           <label>
             Дата
             <input name="date" type="date" required lang="ru-RU" />
@@ -1059,17 +1058,7 @@ function renderDatesTab() {
             Мест
             <input name="seats" type="number" min="1" value="12" required />
           </label>
-          <div class="form-subhead span-2">Материалы после записи</div>
-          <label class="span-2">
-            Текст
-            <textarea name="bookingText" placeholder="Короткая инструкция, которую кандидат получит сразу после записи"></textarea>
-          </label>
-          <label class="span-2">
-            Видео-проходка
-            <input name="directionsVideoUrl" placeholder="https://..." />
-          </label>
           <div class="span-2 button-row slot-form-actions">
-            <button type="button" class="quiet" data-action="clear-slot-template">Очистить шаблон</button>
             <button
               type="submit"
               class="primary${createFeedback ? " action-done" : ""}${actionFeedbackClass("create-slot-submit")}"
@@ -1086,20 +1075,20 @@ function renderDatesTab() {
         </form>
       </section>
 
-      <section class="panel">
+      <section class="panel waitlist-panel">
         <div class="panel-head">
           <div class="panel-title-stack">
-            <h2>Общий лист ожидания</h2>
+            <h2>Лист ожидания</h2>
             ${selectedSlot ? `<span>Дата для рассылки: ${escapeHtml(slotLabel(selectedSlot))}</span>` : ""}
           </div>
           <button
             type="button"
-            class="${waitlistNotified ? "success" : "secondary"}${actionDoneClass(waitlistNotified, "notify-waitlist", { slotId: ui.selectedSlotId })}"
+            class="waitlist-action ${waitlistNotified ? "success" : "secondary"}${actionDoneClass(waitlistNotified, "notify-waitlist", { slotId: ui.selectedSlotId })}"
             data-action="notify-waitlist"
             data-slot-id="${escapeAttr(ui.selectedSlotId)}"
             ${!waitlist.length || !selectedSlot ? "disabled aria-disabled=\"true\"" : ""}
           >
-            ${waitlistNotified ? "Лист уведомлен" : "Уведомить лист"}
+            ${waitlistNotified ? "Уведомлен" : "Уведомить"}
           </button>
         </div>
         <div class="candidate-list">
@@ -1110,9 +1099,9 @@ function renderDatesTab() {
       <section class="panel span-2">
         <div class="panel-head">
           <h2>Активные даты</h2>
-          <span class="pill ok">${visibleActiveSlots.length}</span>
+          <span class="pill ok">${shownActiveSlots.length}</span>
         </div>
-        <div class="date-list">${visibleActiveSlots.map(renderRecruiterSlot).join("") || '<div class="empty">Активных дат пока нет</div>'}</div>
+        <div class="date-list">${shownActiveSlots.map(renderRecruiterSlot).join("") || '<div class="empty">Активных дат пока нет</div>'}</div>
         <details class="archive-panel">
           <summary>
             <span>Архив собесов</span>
@@ -1456,11 +1445,16 @@ function renderEvent(event) {
 }
 
 function renderSlotOptions() {
-  return activeSlots().length
-    ? activeSlots()
+  const slots = visibleActiveSlots();
+  return slots.length
+    ? slots
     .map((slot) => `<option value="${slot.id}" ${slot.id === ui.selectedSlotId ? "selected" : ""}>${escapeHtml(slotLabel(slot))}</option>`)
     .join("")
     : '<option value="">Нет активных дат</option>';
+}
+
+function candidatesForSlot(slotId) {
+  return state.candidates.filter((candidate) => candidate.interviewSlotId === slotId);
 }
 
 function renderVenueOptions() {

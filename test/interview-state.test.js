@@ -113,6 +113,7 @@ test("legacy auto booking messages migrate to empty booking text", () => {
   const legacyNotification = derived.notifications.find((item) => item.id === "notif-old");
   assert.equal(legacyNotification.title, "");
   assert.equal(legacyNotification.message, "");
+  assert.equal(derived.notifications.find((item) => item.type === "resource_registration_bot").title, "");
   assert.deepEqual(derived.settings.developerTelegramIds, ["1294774551"]);
 });
 
@@ -360,7 +361,7 @@ test("arrived candidate receives resources without interview result buttons", ()
     (item) => item.candidateId === candidate.id && item.type === "resource_registration_bot"
   );
   assert.ok(registrationNotification);
-  assert.match(registrationNotification.title, /Материалы LOFT HALL/);
+  assert.equal(registrationNotification.title, "");
   assert.match(registrationNotification.message, /@LoftHallRegistrationBot/);
 
   ({ state } = applyInterviewCommand(

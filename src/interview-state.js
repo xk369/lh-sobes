@@ -271,7 +271,7 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
         id: "notif-001",
         candidateId: "cand-002",
         type: "resource_registration_bot",
-        title: "Материалы LOFT HALL: регистрация в основной базе",
+        title: "",
         message: "Отправлена первая ссылка для регистрации в основной базе.",
         status: "sent",
         channel: "telegram_mock",
@@ -603,7 +603,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.internshipStage = "candidate_resources_sent";
         touch(candidate, now);
         appendNotification(state, candidate.id, `resource_${resourceStep.type}`, now, {
-          title: `Материалы LOFT HALL: ${resourceStep.label}`,
+          title: "",
           message: resourceStepMessage(resourceStep),
           slotId: candidate.interviewSlotId
         });
@@ -1436,6 +1436,10 @@ function normalizeNotificationRecord(notification = {}) {
   if (normalized.type === "booking_materials" && normalized.message.includes(LEGACY_LONG_BOOKING_MARKER)) {
     normalized.title = "";
     normalized.message = "";
+  }
+
+  if (normalized.type.startsWith("resource_") && normalized.title.startsWith("Материалы LOFT HALL:")) {
+    normalized.title = "";
   }
 
   return normalized;

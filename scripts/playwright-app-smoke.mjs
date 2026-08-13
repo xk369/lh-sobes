@@ -71,6 +71,15 @@ try {
 
   await page.getByRole("button", { name: "Рекрут", exact: true }).click();
   await page.locator(".recruiter-grid").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Даты", exact: true }).click();
+  await page.locator("#slot-form").waitFor({ timeout: 10000 });
+  assert.equal(await page.getByText("Материалы после записи").count(), 0, "slot form should not show booking materials block");
+  assert.equal(await page.locator("#slot-form [name='bookingText'], #slot-form [name='directionsVideoUrl']").count(), 0, "slot form should not expose manual materials inputs");
+  await assertWaitlistActionFits(page);
+  await assertNoViewportOverflow(page, "recruiter dates");
+  await page.screenshot({ path: path.join(tmpDir, "app-dates-mobile.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "Журнал", exact: true }).click();
   await page.locator("[data-candidate-search]").fill(candidateName);
   const unmarkedCard = page.locator(".recruiter-candidate-card", { hasText: candidateName }).first();
   await unmarkedCard.waitFor({ timeout: 10000 });
@@ -137,6 +146,19 @@ async function assertAttendanceButtonsStaySide(card) {
     layout.actionLeft > layout.summaryLeft + layout.summaryWidth * 0.42,
     `attendance buttons should stay on the right side: ${JSON.stringify(layout)}`
   );
+}
+
+async function assertWaitlistActionFits(page) {
+  const button = page.locator(".waitlist-action").first();
+  if ((await button.count()) === 0) return;
+  const metrics = await button.evaluate((element) => ({
+    width: element.getBoundingClientRect().width,
+    scrollWidth: element.scrollWidth,
+    height: element.getBoundingClientRect().height,
+    text: element.textContent.trim()
+  }));
+  assert.ok(metrics.scrollWidth <= Math.ceil(metrics.width), `waitlist action text should not overflow: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.height < 52, `waitlist action should stay compact: ${JSON.stringify(metrics)}`);
 }
 
 async function assertNoViewportOverflow(page, label) {
