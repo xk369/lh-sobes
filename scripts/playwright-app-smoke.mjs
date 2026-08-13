@@ -75,6 +75,7 @@ try {
   await page.locator("#slot-form").waitFor({ timeout: 10000 });
   assert.equal(await page.getByText("Материалы после записи").count(), 0, "slot form should not show booking materials block");
   assert.equal(await page.locator("#slot-form [name='bookingText'], #slot-form [name='directionsVideoUrl']").count(), 0, "slot form should not expose manual materials inputs");
+  await assertSlotDateInputFits(page);
   await assertWaitlistActionFits(page);
   await assertNoViewportOverflow(page, "recruiter dates");
   await page.screenshot({ path: path.join(tmpDir, "app-dates-mobile.png"), fullPage: true });
@@ -110,6 +111,16 @@ try {
   const refusedGroup = page.locator(".journal-group", { hasText: "Отказ после собеса" });
   await refusedGroup.locator(".recruiter-candidate-card", { hasText: candidateName }).first().waitFor({ timeout: 10000 });
   await assertNoViewportOverflow(page, "recruiter refused after interview");
+
+  await page.getByRole("button", { name: "Собес завершен", exact: true }).click();
+  await page.getByRole("button", { name: "Даты", exact: true }).click();
+  await page.locator(".archive-panel > summary").click();
+  await page.locator("[data-archive-search]").fill(candidateName);
+  const archivedCard = page.locator(".archive-candidate-card", { hasText: candidateName }).first();
+  await archivedCard.waitFor({ timeout: 10000 });
+  await assertArchiveCandidateCardCompact(archivedCard);
+  await assertNoViewportOverflow(page, "archive candidate compact");
+  await page.screenshot({ path: path.join(tmpDir, "app-archive-mobile.png"), fullPage: true });
 
   assert.deepEqual(browserErrors, [], "browser console/page errors should be empty");
   console.log(`ok - app smoke passed: ${baseUrl}`);
@@ -159,6 +170,42 @@ async function assertWaitlistActionFits(page) {
   }));
   assert.ok(metrics.scrollWidth <= Math.ceil(metrics.width), `waitlist action text should not overflow: ${JSON.stringify(metrics)}`);
   assert.ok(metrics.height < 52, `waitlist action should stay compact: ${JSON.stringify(metrics)}`);
+}
+
+async function assertSlotDateInputFits(page) {
+  const metrics = await page.locator("#slot-form input[type='date']").evaluate((element) => {
+    const input = element.getBoundingClientRect();
+    const form = element.closest("#slot-form").getBoundingClientRect();
+    const panel = element.closest(".panel").getBoundingClientRect();
+    return {
+      input: input.toJSON(),
+      form: form.toJSON(),
+      panel: panel.toJSON(),
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth
+    };
+  });
+
+  assert.ok(metrics.input.left >= metrics.panel.left - 1, `date input should stay inside panel left edge: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.input.right <= metrics.panel.right + 1, `date input should stay inside panel right edge: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.input.right <= metrics.form.right + 1, `date input should stay inside form right edge: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, `date input content should not force internal overflow: ${JSON.stringify(metrics)}`);
+}
+
+async function assertArchiveCandidateCardCompact(card) {
+  const metrics = await card.evaluate((element) => {
+    const cardBox = element.getBoundingClientRect();
+    const status = element.querySelector(".archive-status-chip")?.getBoundingClientRect();
+    return {
+      card: cardBox.toJSON(),
+      status: status?.toJSON() || null,
+      largeStatusPills: element.querySelectorAll(".candidate-status.pill").length
+    };
+  });
+
+  assert.equal(metrics.largeStatusPills, 0, "archive card should not reuse the large candidate status pill");
+  assert.ok(metrics.card.height <= 112, `archive candidate card should remain compact before details open: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.status && metrics.status.width <= 122, `archive status chip should stay small: ${JSON.stringify(metrics)}`);
 }
 
 async function assertNoViewportOverflow(page, label) {

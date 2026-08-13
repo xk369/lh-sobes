@@ -1102,7 +1102,7 @@ function renderDatesTab() {
           <span class="pill ok">${shownActiveSlots.length}</span>
         </div>
         <div class="date-list">${shownActiveSlots.map(renderRecruiterSlot).join("") || '<div class="empty">Активных дат пока нет</div>'}</div>
-        <details class="archive-panel">
+        <details class="archive-panel" ${ui.archiveSearch.trim() ? "open" : ""}>
           <summary>
             <span>Архив собесов</span>
             <b>${archivedSlots().length}</b>
@@ -1180,12 +1180,13 @@ function renderWaitlistCandidate(candidate, index = 0) {
 function renderArchivedSlot(slot) {
   const candidates = archiveCandidatesForSlot(slot);
   const query = ui.archiveSearch.trim();
-  const visibleCandidates = query
+  const hasQuery = Boolean(query);
+  const visibleCandidates = hasQuery
     ? candidates.filter((candidate) => candidateMatchesQuery(candidate, query))
     : candidates;
 
   return `
-    <details class="archive-slot-card">
+    <details class="archive-slot-card" ${hasQuery ? "open" : ""}>
       <summary>
         <span class="archive-slot-main">
           <b>${escapeHtml(slotLabel(slot))}</b>
@@ -1203,24 +1204,30 @@ function renderArchivedSlot(slot) {
 function renderArchiveCandidate(candidate, index = 0) {
   const telegram = cleanTelegram(candidate.telegram);
   return `
-    <article class="candidate-card recruiter-candidate-card archive-candidate-card ${candidateCardTone(candidate)}">
-      <details class="recruiter-person-details">
-        <summary class="candidate-name-summary">
-          <span class="candidate-title-line">
+    <article class="candidate-card archive-candidate-card ${candidateCardTone(candidate)}">
+      <details class="archive-person-details">
+        <summary class="archive-person-summary">
+          <span class="archive-person-main">
             <span class="candidate-number">${index + 1}</span>
-            <b class="name">${escapeHtml(candidate.name)}</b>
+            <b>${escapeHtml(candidate.name)}</b>
           </span>
-          ${renderStatusPill(candidate.status)}
+          ${renderArchiveStatusChip(candidate)}
         </summary>
-        <div class="candidate-details-body">
+        <div class="candidate-details-body archive-person-details-body">
           ${renderCandidateMeta(candidate)}
         </div>
       </details>
-      <div class="compact-person-row">
-        ${telegram ? `<button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="queue-telegram muted">без Telegram</span>'}
+      <div class="archive-person-footer">
+        ${telegram ? `<button type="button" class="archive-telegram-button" data-action="copy-telegram" data-copy-value="${escapeAttr(telegram)}">${escapeHtml(telegram)}</button>` : '<span class="archive-telegram-button muted">без Telegram</span>'}
       </div>
     </article>
   `;
+}
+
+function renderArchiveStatusChip(candidate) {
+  const label = attendanceMarkLabel(candidate);
+  const tone = isArrivedCandidate(candidate) ? "ok" : isMissedCandidate(candidate) || isPostInterviewRefusal(candidate) ? "bad" : statusTone(candidate.status);
+  return `<span class="archive-status-chip ${tone}">${escapeHtml(label)}</span>`;
 }
 
 function renderRecruiterSlot(slot) {
