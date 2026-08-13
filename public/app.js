@@ -6,6 +6,7 @@ const ui = {
   recruiterSearch: "",
   archiveSearch: "",
   stageHelpKey: "",
+  createSlotFeedback: null,
   actionFeedback: {}
 };
 
@@ -300,6 +301,8 @@ document.addEventListener("input", (event) => {
 document.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
+  const submitButton = event.submitter?.closest("button");
+  const originalSubmitText = submitButton?.textContent || "";
 
   try {
     if (form.id === "candidate-form") {
@@ -311,6 +314,11 @@ document.addEventListener("submit", async (event) => {
     }
 
     if (form.id === "slot-form") {
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.classList.add("is-loading");
+        submitButton.textContent = "Создаем...";
+      }
       const data = Object.fromEntries(new FormData(form));
       data.time = `${data.hour}:${data.minute}`;
       delete data.hour;
@@ -318,12 +326,28 @@ document.addEventListener("submit", async (event) => {
       if (data.bookingText?.trim() || data.directionsVideoUrl?.trim()) {
         data.templateCleared = "";
       }
-      const response = await runCommand("create_slot", data);
+      const response = await runCommand("create_slot", data, submitButton);
+      ui.createSlotFeedback = {
+        notifiedCount: response.result.notifiedCount || 0,
+        createdAt: Date.now()
+      };
       form.reset();
+      render();
+      window.setTimeout(() => {
+        if (!ui.createSlotFeedback) return;
+        ui.createSlotFeedback = null;
+        render();
+      }, 1800);
       showToast(`Дата создана, уведомлений: ${response.result.notifiedCount || 0}`);
     }
   } catch (error) {
     showToast(error.message || "Форма не сохранена");
+  } finally {
+    if (submitButton && document.contains(submitButton)) {
+      submitButton.disabled = false;
+      submitButton.classList.remove("is-loading");
+      submitButton.textContent = originalSubmitText;
+    }
   }
 });
 
@@ -465,7 +489,9 @@ function render() {
 }
 
 function renderCandidateView(candidate) {
-  const openSlots = state.slots.filter((slot) => slot.status === "open");
+  const hasBooking = candidateHasActiveBooking(candidate);
+  const openSlots = hasBooking ? [] : state.slots.filter((slot) => slot.status === "open");
+  const bookedSlot = hasBooking ? state.slots.find((slot) => slot.id === candidate.interviewSlotId) : null;
 
   return `
     <section id="candidateView">
@@ -488,14 +514,25 @@ function renderCandidateView(candidate) {
       <section class="panel">
         <div class="panel-head">
           <h2>Запись</h2>
-          <span class="pill ok">${openSlots.length} дат</span>
+          <span class="pill ${hasBooking ? "wait" : "ok"}">${hasBooking ? "Дата выбрана" : `${openSlots.length} дат`}</span>
         </div>
-        <div class="date-list">
-          ${openSlots.map((slot) => renderCandidateSlot(slot)).join("") || '<div class="empty">Открытых дат пока нет</div>'}
-        </div>
-        <button type="button" class="secondary" data-action="join-waitlist">Уведомить о следующем собеседовании</button>
+        ${hasBooking ? renderLockedBookingNotice(bookedSlot, candidate) : `
+          <div class="date-list">
+            ${openSlots.map((slot) => renderCandidateSlot(slot)).join("") || '<div class="empty">Открытых дат пока нет</div>'}
+          </div>
+          <button type="button" class="secondary" data-action="join-waitlist">Уведомить о следующем собеседовании</button>
+        `}
       </section>
     </section>
+  `;
+}
+
+function renderLockedBookingNotice(slot, candidate) {
+  return `
+    <div class="notice locked-booking-notice">
+      <b>${slot ? escapeHtml(slotLabel(slot)) : "Дата собеседования выбрана"}</b>
+      <span>${escapeHtml(journalStatusLabel(candidate))}</span>
+    </div>
   `;
 }
 
@@ -902,7 +939,7 @@ function renderRecruiterCandidate(candidate, index = 0) {
   const telegram = cleanTelegram(candidate.telegram);
   return `
     <article class="candidate-card recruiter-candidate-card ${marked ? "marked" : ""} ${candidateCardTone(candidate)}">
-      <div class="candidate-mark-row ${isLongCandidateName(candidate.name) ? "long-name" : ""}">
+      <div class="candidate-mark-row">
         <details class="recruiter-person-details">
           <summary class="candidate-name-summary">
             <span class="candidate-title-stack">
@@ -983,6 +1020,7 @@ function renderDatesTab() {
   const waitlistNotified = waitlistNotifiedForSlot(ui.selectedSlotId);
   const visibleActiveSlots = activeSlots();
   const visibleArchivedSlots = filterArchivedSlots(archivedSlots());
+  const createFeedback = ui.createSlotFeedback;
 
   return `
     <section class="grid">
@@ -1020,7 +1058,13 @@ function renderDatesTab() {
           </label>
           <div class="span-2 button-row slot-form-actions">
             <button type="button" class="quiet" data-action="clear-slot-template">Очистить шаблон</button>
-            <button type="submit" class="primary">Создать и уведомить лист</button>
+            <button
+              type="submit"
+              class="primary${actionFeedbackClass("create-slot-submit")}"
+              data-action="create-slot-submit"
+            >
+              ${createFeedback ? `Создано · уведомлено ${createFeedback.notifiedCount}` : "Создать и уведомить лист"}
+            </button>
           </div>
         </form>
       </section>
@@ -1364,16 +1408,18 @@ function isMissedCandidate(candidate) {
   return !isPostInterviewRefusal(candidate) && ["no_show", "declined_before", "no_confirmation"].includes(candidate.attendanceStatus);
 }
 
+function candidateHasActiveBooking(candidate) {
+  if (!candidate?.interviewSlotId) return false;
+  const slot = state.slots.find((item) => item.id === candidate.interviewSlotId);
+  if (!slot || slot.status === "completed") return false;
+  return ["booked", "confirmation_pending", "confirmed", "attended", "registration_pending", "registered", "ready_for_internship"].includes(candidate.status);
+}
+
 function candidateCardTone(candidate) {
   if (candidate.status === "left_after_interview") return "left";
   if (isArrivedCandidate(candidate)) return "arrived";
   if (isMissedCandidate(candidate)) return "missed";
   return "unmarked";
-}
-
-function isLongCandidateName(name) {
-  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-  return parts.length > 2 || String(name || "").length > 26;
 }
 
 function renderEvent(event) {

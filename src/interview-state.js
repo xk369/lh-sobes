@@ -369,11 +369,17 @@ export function applyInterviewCommand(input, command, options = {}) {
     case "create_slot": {
       const venue = resolveInterviewVenue(state.settings, payload);
       const templateCleared = payload.templateCleared === true || payload.templateCleared === "true";
+      const date = requireText(payload.date, "Slot date is required");
+      const time = requireText(payload.time, "Slot time is required");
+      const duplicate = findActiveSlotByDateTime(state, date, time);
+      if (duplicate && duplicate.id !== payload.id) {
+        throw new Error("На эту дату и время уже создано активное собеседование");
+      }
       const slot = {
         id: payload.id || nextId("slot", state.slots),
         title: "Собеседование LOFT HALL",
-        date: requireText(payload.date, "Slot date is required"),
-        time: requireText(payload.time, "Slot time is required"),
+        date,
+        time,
         venueId: venue.id,
         venue: venue.name,
         venueAddress: venue.address,
@@ -1492,6 +1498,17 @@ function availableSeatsForBooking(state, slotId, candidateId = "") {
     ? state.candidates.filter((candidate) => candidate.id !== candidateId)
     : state.candidates;
   return deriveSlot(requireSlot(state, slotId), candidates, state.settings).availableSeats;
+}
+
+function findActiveSlotByDateTime(state, date, time) {
+  const normalizedDate = clean(date);
+  const normalizedTime = clean(time);
+  return state.slots.find(
+    (slot) =>
+      slot.status !== "completed" &&
+      clean(slot.date) === normalizedDate &&
+      clean(slot.time) === normalizedTime
+  );
 }
 
 function findCandidateIndex(candidates, payload = {}) {

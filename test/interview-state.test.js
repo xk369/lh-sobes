@@ -43,6 +43,50 @@ test("new interview date automatically notifies waitlist candidates", () => {
   assert.equal(notification.slotId, result.result.slotId);
 });
 
+test("active interview date cannot be duplicated by date and time", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  assert.throws(
+    () =>
+      applyInterviewCommand(
+        state,
+        {
+          action: "create_slot",
+          payload: {
+            date: "2026-08-13",
+            time: "12:00",
+            venueId: "loft4",
+            seats: 8
+          }
+        },
+        { now: "2026-08-10T10:00:00.000Z" }
+      ),
+    /уже создано активное собеседование/
+  );
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "complete_slot", payload: { slotId: "slot-001" } },
+    { now: "2026-08-13T14:00:00.000Z" }
+  ));
+
+  const result = applyInterviewCommand(
+    state,
+    {
+      action: "create_slot",
+      payload: {
+        date: "2026-08-13",
+        time: "12:00",
+        venueId: "loft4",
+        seats: 8
+      }
+    },
+    { now: "2026-08-13T14:05:00.000Z" }
+  );
+
+  assert.ok(result.result.slotId);
+});
+
 test("legacy auto booking messages migrate to empty booking text", () => {
   const state = createSeedState("2026-08-10T09:00:00.000Z");
   state.slots[0].bookingText = "Ждем вас на собеседовании: LOFT #8. После подтверждения отправим дополнительные материалы.";

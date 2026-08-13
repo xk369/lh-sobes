@@ -664,6 +664,17 @@ textarea:focus {
   background: var(--button-primary-active);
 }
 
+.primary.is-loading,
+.secondary.is-loading,
+.success.is-loading,
+.danger.is-loading {
+  color: var(--button-primary-text);
+  background: color-mix(in srgb, var(--accent) 76%, var(--muted));
+  border-color: transparent;
+  box-shadow: 0 0 0 5px var(--accent-soft);
+  animation: action-pulse 0.82s ease-in-out infinite alternate;
+}
+
 .secondary:not(:disabled):not([aria-disabled="true"]):active,
 .success:not(:disabled):not([aria-disabled="true"]):active,
 .subtab:not(:disabled):not([aria-disabled="true"]):active,
@@ -708,6 +719,16 @@ textarea:focus {
   }
 }
 
+@keyframes action-pulse {
+  from {
+    transform: scale(0.992);
+  }
+
+  to {
+    transform: scale(1.01);
+  }
+}
+
 .primary:focus-visible,
 .secondary:focus-visible,
 .success:focus-visible,
@@ -730,6 +751,15 @@ button[aria-disabled="true"] {
   box-shadow: none;
   filter: saturate(0.72);
   transform: none;
+}
+
+button.is-loading:disabled {
+  color: var(--button-primary-text);
+  background: color-mix(in srgb, var(--accent) 78%, var(--muted));
+  border-color: transparent;
+  box-shadow: 0 0 0 5px var(--accent-soft);
+  filter: none;
+  animation: action-pulse 0.82s ease-in-out infinite alternate;
 }
 
 .pill,
@@ -881,24 +911,10 @@ button[aria-disabled="true"] {
 
 .recruiter-candidate-card .candidate-name-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) clamp(142px, 29%, 190px);
+  gap: 10px;
+  align-items: center;
   width: 100%;
-}
-
-.candidate-mark-row.long-name .candidate-name-summary {
-  grid-template-columns: 1fr;
-}
-
-.candidate-mark-row.long-name .attendance-quick-actions {
-  width: fit-content;
-  margin-left: 38px;
-}
-
-.candidate-mark-row.long-name .attendance-state {
-  width: fit-content;
-  margin-left: 38px;
 }
 
 .recruiter-person-details {
@@ -908,7 +924,7 @@ button[aria-disabled="true"] {
 }
 
 .attendance-quick-actions {
-  width: 190px;
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
@@ -924,6 +940,7 @@ button[aria-disabled="true"] {
 }
 
 .attendance-state {
+  width: 100%;
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -1253,6 +1270,26 @@ button[aria-disabled="true"] {
   color: var(--muted);
   font-size: 13px;
   font-weight: 750;
+}
+
+.locked-booking-notice {
+  display: grid;
+  gap: 4px;
+  border-color: color-mix(in srgb, var(--ok) 22%, var(--line));
+  background: color-mix(in srgb, var(--ok) 8%, var(--surface));
+}
+
+.locked-booking-notice b {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.locked-booking-notice span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .notification-card {
@@ -1870,11 +1907,6 @@ button[aria-disabled="true"] {
     max-width: none;
   }
 
-  .candidate-mark-row.long-name .attendance-quick-actions {
-    width: fit-content;
-    margin-left: 38px;
-  }
-
   .candidate-info-grid {
     gap: 11px 12px;
     padding: 11px;
@@ -1935,8 +1967,8 @@ button[aria-disabled="true"] {
     padding: 10px;
   }
 
-  .candidate-mark-row {
-    grid-template-columns: minmax(0, 1fr) 170px;
+  .recruiter-candidate-card .candidate-name-summary {
+    grid-template-columns: minmax(0, 1fr) clamp(124px, 37vw, 160px);
     gap: 7px;
   }
 
@@ -1957,7 +1989,7 @@ button[aria-disabled="true"] {
   }
 
   .attendance-quick-actions {
-    width: 170px;
+    width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
   }
