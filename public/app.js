@@ -1696,13 +1696,8 @@ function stageIcon(name) {
 }
 
 function renderCandidateMeta(candidate) {
-  const slot = candidate.interviewSlotId ? state.slots.find((item) => item.id === candidate.interviewSlotId) : null;
   return `
     <div class="candidate-info-grid">
-      <div class="candidate-info-item">
-        <span>Telegram ID</span>
-        <b>${escapeHtml(candidate.telegramId || "не указан")}</b>
-      </div>
       <div class="candidate-info-item">
         <span>Никнейм</span>
         <b>${escapeHtml(candidate.telegram || "не указан")}</b>
@@ -1710,18 +1705,6 @@ function renderCandidateMeta(candidate) {
       <div class="candidate-info-item">
         <span>Телефон</span>
         <b>${escapeHtml(candidate.phone || "без телефона")}</b>
-      </div>
-      <div class="candidate-info-item">
-        <span>Этап</span>
-        <b>${escapeHtml(stageLabel(candidate))}</b>
-      </div>
-      <div class="candidate-info-item">
-        <span>Собес</span>
-        <b>${escapeHtml(slot ? slotLabel(slot) : "не выбран")}</b>
-      </div>
-      <div class="candidate-info-item">
-        <span>Материалы</span>
-        <b>${escapeHtml(`${candidate.resourceStepsSent?.length || 0}/${resourceSteps().length || 0} отправлено`)}</b>
       </div>
     </div>
   `;
@@ -1839,8 +1822,15 @@ function clearRememberedCandidate() {
 
 function reconcileRememberedCandidate() {
   if (!ui.candidateId || !state) return;
-  const exists = state.candidates.some((candidate) => candidate.id === ui.candidateId);
-  if (!exists) clearRememberedCandidate();
+  const candidate = state.candidates.find((item) => item.id === ui.candidateId);
+  if (!candidate) {
+    clearRememberedCandidate();
+    return;
+  }
+  const telegramId = String(telegramWebAppUser()?.id || "");
+  if (telegramId && candidate.telegramId && String(candidate.telegramId) !== telegramId) {
+    clearRememberedCandidate();
+  }
 }
 
 function getCurrentCandidate() {

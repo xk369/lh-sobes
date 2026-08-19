@@ -6,6 +6,11 @@ Server path: `/opt/lh-sobes`
 Container: `lh-sobes`  
 Local proxy port: `127.0.0.1:3700`
 
+## Runtime Vars
+
+- `TELEGRAM_BOT_TOKEN` — токен бота для отправки уведомлений.
+- `SELF_EMPLOYMENT_BUTTON_URL` — точная PuzzleBot/deep-link ссылка для кнопки `💳 Самозанятость и выплаты`. Если не задана, используется `https://t.me/LOFT_HELPER_V2_BOT?start=samozanyatost`.
+
 ## Safety Rules
 
 - Do not touch existing LOFT HALL production folders.

@@ -8,6 +8,7 @@ services:
       PORT: 3000
       NODE_ENV: production
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SELF_EMPLOYMENT_BUTTON_URL: ${SELF_EMPLOYMENT_BUTTON_URL:-}
     ports:
       - "127.0.0.1:3700:3000"
     volumes:

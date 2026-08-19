@@ -165,6 +165,11 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   assert.equal(bookingMaterials.media.length, 1);
   assert.equal(bookingMaterials.media[0].type, "video");
   assert.equal(bookingMaterials.media[0].fileId, "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E");
+  assert.equal(bookingMaterials.media[0].caption, "");
+  assert.match(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "booking_created").message,
+    /https:\/\/yandex\.ru\/maps\/-\/CTsmF-9~/
+  );
 
   ({ state } = applyInterviewCommand(
     state,
@@ -442,6 +447,42 @@ test("candidate profile requires readable full name and Russian phone", () => {
   );
 });
 
+test("candidate profiles are not implicitly merged by phone or telegram", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "upsert_candidate",
+      payload: {
+        name: "Первый Кандидат",
+        phone: "+7 900 111-11-11",
+        telegram: "@same_profile",
+        telegramId: "900111111"
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  ));
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "upsert_candidate",
+      payload: {
+        name: "Второй Кандидат",
+        phone: "+7 900 111-11-11",
+        telegram: "@same_profile",
+        telegramId: "900111111"
+      }
+    },
+    { now: "2026-08-10T10:05:00.000Z" }
+  ));
+
+  const matches = state.candidates.filter((candidate) => candidate.telegramId === "900111111");
+  assert.equal(matches.length, 2);
+  assert.deepEqual(matches.map((candidate) => candidate.name), ["Первый Кандидат", "Второй Кандидат"]);
+});
+
 test("candidate can cancel booking without entering waitlist and frees seat", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
   const slotBefore = state.slots.find((item) => item.id === "slot-002");
@@ -601,7 +642,7 @@ test("arrived candidate receives resources without interview result buttons", ()
     (item) => item.candidateId === candidate.id && item.type === "resource_registration_bot"
   );
   assert.ok(registrationNotification);
-  assert.equal(registrationNotification.title, "");
+  assert.equal(registrationNotification.title, "1/5 — Регистрация");
   assert.match(registrationNotification.message, /@LoftHallRegistrationBot/);
 
   ({ state } = applyInterviewCommand(
@@ -613,10 +654,11 @@ test("arrived candidate receives resources without interview result buttons", ()
   const withSecondResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withSecondResource.resourceStepsSent.length, 2);
   assert.equal(withSecondResource.resourceStepsSent[1].type, "staff_bot");
-  assert.match(
-    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_staff_bot").message,
-    /@LoftHallStaffBot/
+  const staffBotNotification = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "resource_staff_bot"
   );
+  assert.equal(staffBotNotification.title, "📅 2/5 — Запись на смены");
+  assert.match(staffBotNotification.message, /@LoftHallStaffBot/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -627,10 +669,11 @@ test("arrived candidate receives resources without interview result buttons", ()
   const withThirdResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withThirdResource.resourceStepsSent.length, 3);
   assert.equal(withThirdResource.resourceStepsSent[2].type, "unattested_group");
-  assert.match(
-    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_unattested_group").message,
-    /не прошли аттестацию/
+  const unattestedNotification = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "resource_unattested_group"
   );
+  assert.equal(unattestedNotification.title, "👥 3/5 — Группа «Неаттестованные»");
+  assert.match(unattestedNotification.message, /не прошли аттестацию/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -641,10 +684,11 @@ test("arrived candidate receives resources without interview result buttons", ()
   const withFourthResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withFourthResource.resourceStepsSent.length, 4);
   assert.equal(withFourthResource.resourceStepsSent[3].type, "helper_bot");
-  assert.match(
-    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_helper_bot").message,
-    /@LOFT_HELPER_V2_BOT/
+  const helperBotNotification = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "resource_helper_bot"
   );
+  assert.equal(helperBotNotification.title, "📚 4/5 — LOFT HALL HELPER BOT");
+  assert.match(helperBotNotification.message, /@LOFT_HELPER_V2_BOT/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -658,6 +702,7 @@ test("arrived candidate receives resources without interview result buttons", ()
   const selfEmploymentNotification = state.notifications.find(
     (item) => item.candidateId === candidate.id && item.type === "resource_self_employment"
   );
+  assert.equal(selfEmploymentNotification.title, "💳 5/5 — Самозанятость и выплаты");
   assert.match(
     selfEmploymentNotification.message,
     /самозанятость/
@@ -666,7 +711,7 @@ test("arrived candidate receives resources without interview result buttons", ()
     {
       label: "💳 Самозанятость и выплаты",
       callbackData: "",
-      url: "https://t.me/LOFT_HELPER_V2_BOT"
+      url: "https://t.me/LOFT_HELPER_V2_BOT?start=samozanyatost"
     }
   ]);
 

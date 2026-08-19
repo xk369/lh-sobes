@@ -10,9 +10,11 @@ const LEGACY_BOOKING_PREFIXES = [
 ];
 const LEGACY_LOFT3_ADDRESS = "ул. Ленинская Слобода, 26с15";
 const DEVELOPER_TELEGRAM_IDS = ["1294774551"];
-const LOFT_23_MAP_URL = "https://yandex.ru/maps/?text=%D1%83%D0%BB.%20%D0%9B%D0%B5%D0%BD%D0%B8%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%20%D0%A1%D0%BB%D0%BE%D0%B1%D0%BE%D0%B4%D0%B0%2C%2026%D1%8111";
+const LOFT_23_MAP_URL = "https://yandex.ru/maps/-/CTsmF-9~";
 const RECRUITING_CONTACT = "@LOFT_RECRUITING_MSK";
-const SELF_EMPLOYMENT_BUTTON_URL = "https://t.me/LOFT_HELPER_V2_BOT";
+const SELF_EMPLOYMENT_BUTTON_URL =
+  clean(globalThis.process?.env?.SELF_EMPLOYMENT_BUTTON_URL) ||
+  "https://t.me/LOFT_HELPER_V2_BOT?start=samozanyatost";
 const STAFF_BOT_MESSAGE = `Для записи на доступные смены используйте бот:
 
 @LoftHallStaffBot`;
@@ -601,7 +603,7 @@ export function applyInterviewCommand(input, command, options = {}) {
         candidate.internshipStage = "candidate_resources_sent";
         touch(candidate, now);
         appendNotification(state, candidate.id, `resource_${resourceStep.type}`, now, {
-          title: "",
+          title: resourceStep.label,
           message: resourceStepMessage(resourceStep),
           slotId: candidate.interviewSlotId,
           actions: resourceStepActions(resourceStep)
@@ -828,7 +830,7 @@ function defaultSettings() {
       {
         id: "loft_23_route",
         label: "Проходка LOFT 2/3",
-        caption: "Проходка до LOFT 2/3",
+        caption: "",
         telegramFileId: LOFT_23_ROUTE_FILE_ID,
         telegramMethod: "video"
       }
@@ -843,28 +845,28 @@ function defaultSettings() {
       },
       {
         type: "staff_bot",
-        label: "2/5 — Запись на смены",
+        label: "📅 2/5 — Запись на смены",
         description: "Бот записи на доступные смены",
         url: "https://t.me/LoftHallStaffBot",
         message: STAFF_BOT_MESSAGE
       },
       {
         type: "unattested_group",
-        label: "3/5 — Группа «Неаттестованные»",
+        label: "👥 3/5 — Группа «Неаттестованные»",
         description: "Группа для сотрудников до аттестации",
         url: "https://t.me/+tpUuI31XJyA2ZWFi",
         message: UNATTESTED_GROUP_MESSAGE
       },
       {
         type: "helper_bot",
-        label: "4/5 — LOFT HALL HELPER BOT",
+        label: "📚 4/5 — LOFT HALL HELPER BOT",
         description: "База знаний и Академия LOFT HALL",
         url: "https://t.me/LOFT_HELPER_V2_BOT",
         message: HELPER_BOT_MESSAGE
       },
       {
         type: "self_employment",
-        label: "5/5 — Самозанятость и выплаты",
+        label: "💳 5/5 — Самозанятость и выплаты",
         description: "Инструкция по оформлению, выплатам и самозанятости",
         url: SELF_EMPLOYMENT_BUTTON_URL,
         message: SELF_EMPLOYMENT_MESSAGE,
@@ -974,7 +976,7 @@ function normalizeDirectionMaterial(material = {}) {
   return {
     id,
     label: clean(material.label || material.name || "Проходка"),
-    caption: clean(material.caption || material.description || "Проходка до площадки"),
+    caption: clean(material.caption),
     telegramFileId: fileId,
     telegramMethod,
     publicUrl: clean(material.publicUrl || material.url)
@@ -1257,8 +1259,7 @@ function bookingMaterialsMessage(slot = {}) {
 function slotMapUrl(slot = {}) {
   const directUrl = clean(slot.mapUrl);
   if (directUrl) return directUrl;
-  const address = clean(slot.venueAddress);
-  return address ? `https://yandex.ru/maps/?text=${encodeURIComponent(address)}` : LOFT_23_MAP_URL;
+  return LOFT_23_MAP_URL;
 }
 
 function createCandidate(payload, now) {
@@ -1414,12 +1415,13 @@ function countBy(keys, candidates, field) {
 function upsertCandidate(state, payload, now) {
   const profile = normalizeCandidateProfilePayload(payload);
   const index = findCandidateIndex(state.candidates, payload);
+  const createId = clean(payload.id && !payload.candidateId ? payload.id : "");
   const candidate =
     index >= 0
       ? state.candidates[index]
       : createCandidate(
           {
-            id: payload.id || payload.candidateId || nextId("cand", state.candidates),
+            id: createId || nextId("cand", state.candidates),
             status: "waitlist",
             candidateLayerStatus: "candidate_created"
           },
@@ -1601,7 +1603,7 @@ function routeMediaForSlot(slot = {}) {
     {
       type: material.telegramMethod || "document",
       fileId: material.telegramFileId,
-      caption: material.caption || material.label || "Проходка до площадки"
+      caption: ""
     }
   ];
 }
@@ -1792,25 +1794,8 @@ function findActiveSlotByDateTime(state, date, time) {
 }
 
 function findCandidateIndex(candidates, payload = {}) {
-  const candidateId = payload.candidateId || payload.id;
-  if (candidateId) return candidates.findIndex((candidate) => candidate.id === candidateId);
-
-  const telegramId = clean(payload.telegramId);
-  if (telegramId) {
-    const byTelegramId = candidates.findIndex((candidate) => clean(candidate.telegramId) === telegramId);
-    if (byTelegramId >= 0) return byTelegramId;
-  }
-
-  const phone = normalizePhone(payload.phone);
-  if (phone) {
-    const byPhone = candidates.findIndex((candidate) => normalizePhone(candidate.phone) === phone);
-    if (byPhone >= 0) return byPhone;
-  }
-
-  const telegram = normalizeTelegram(payload.telegram);
-  if (telegram) return candidates.findIndex((candidate) => normalizeTelegram(candidate.telegram) === telegram);
-
-  return -1;
+  const candidateId = clean(payload.candidateId || payload.id);
+  return candidateId ? candidates.findIndex((candidate) => candidate.id === candidateId) : -1;
 }
 
 function requireSlot(state, slotId) {
