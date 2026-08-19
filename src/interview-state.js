@@ -194,7 +194,7 @@ export function createSeedState(now = "2026-08-10T09:00:00.000Z") {
 
 export function deriveState(input) {
   const state = clone(input || {});
-  state.schemaVersion = Number(state.schemaVersion || 3);
+  state.schemaVersion = Math.max(Number(state.schemaVersion || 0), 3);
   state.version = Number(state.version || 1);
   state.settings = normalizeSettings(state.settings);
   state.slots = Array.isArray(state.slots) ? state.slots : [];
@@ -918,72 +918,39 @@ function normalizeDeveloperTelegramIds(ids = []) {
 }
 
 function mergeDefaultResourceSteps(steps = [], defaults = []) {
-  const defaultsByType = new Map(defaults.map((step) => [clean(step.type || step.id), step]));
-  const merged = Array.isArray(steps)
-    ? steps.map((step) => {
-        const type = clean(step?.type || step?.id);
-        return defaultsByType.has(type) ? { ...step, ...defaultsByType.get(type) } : step;
-      })
-    : [];
-  const knownTypes = new Set(merged.map((step) => clean(step?.type || step?.id)));
-  for (const defaultStep of defaults) {
-    const type = clean(defaultStep.type || defaultStep.id);
-    if (!knownTypes.has(type)) {
-      merged.push(defaultStep);
-      knownTypes.add(type);
-    }
+  const incomingByType = new Map();
+  for (const step of Array.isArray(steps) ? steps : []) {
+    const type = clean(step?.type || step?.id);
+    if (type && !incomingByType.has(type)) incomingByType.set(type, step);
   }
-  return merged;
+  return defaults.map((defaultStep) => {
+    const type = clean(defaultStep.type || defaultStep.id);
+    return { ...(incomingByType.get(type) || {}), ...defaultStep };
+  });
 }
 
 function mergeDefaultVenues(venues = [], defaults = []) {
-  const defaultsById = new Map(defaults.map((venue) => [clean(venue.id), venue]));
-  const merged = Array.isArray(venues)
-    ? venues.map((venue) => {
-        const id = normalizeVenueId(venue?.id || venue?.name || venue?.venue);
-        const defaultVenue = defaultsById.get(id);
-        const mergedVenue = { ...(defaultVenue || {}), ...venue, id };
-        if (id === "loft23") {
-          mergedVenue.name = defaultVenue?.name || "LOFT#2/3";
-          mergedVenue.address = defaultVenue?.address || mergedVenue.address;
-          mergedVenue.directionsMaterialId = defaultVenue?.directionsMaterialId || mergedVenue.directionsMaterialId;
-          mergedVenue.mapUrl = defaultVenue?.mapUrl || mergedVenue.mapUrl;
-        }
-        return mergedVenue;
-      })
-    : [];
-  const supportedIds = new Set(defaults.map((venue) => clean(venue.id)));
-  const filtered = merged.filter((venue) => supportedIds.has(clean(venue?.id)));
-  const knownIds = new Set(filtered.map((venue) => clean(venue?.id)));
-  for (const defaultVenue of defaults) {
-    const id = clean(defaultVenue.id);
-    if (!knownIds.has(id)) {
-      filtered.push(defaultVenue);
-      knownIds.add(id);
-    }
+  const incomingById = new Map();
+  for (const venue of Array.isArray(venues) ? venues : []) {
+    const id = normalizeVenueId(venue?.id || venue?.name || venue?.venue);
+    if (id && !incomingById.has(id)) incomingById.set(id, venue);
   }
-  return filtered;
+  return defaults.map((defaultVenue) => {
+    const id = clean(defaultVenue.id);
+    return { ...(incomingById.get(id) || {}), ...defaultVenue };
+  });
 }
 
 function mergeDefaultDirectionMaterials(materials = [], defaults = []) {
-  const defaultsById = new Map(defaults.map((material) => [clean(material.id || material.type), material]));
-  const merged = Array.isArray(materials)
-    ? materials.map((material) => {
-        const id = clean(material?.id || material?.type);
-        return defaultsById.has(id) ? { ...material, ...defaultsById.get(id) } : material;
-      })
-    : [];
-  const supportedIds = new Set(defaults.map((material) => clean(material.id || material.type)));
-  const filtered = merged.filter((material) => supportedIds.has(clean(material?.id || material?.type)));
-  const knownIds = new Set(filtered.map((material) => clean(material?.id || material?.type)));
-  for (const defaultMaterial of defaults) {
-    const id = clean(defaultMaterial.id || defaultMaterial.type);
-    if (!knownIds.has(id)) {
-      filtered.push(defaultMaterial);
-      knownIds.add(id);
-    }
+  const incomingById = new Map();
+  for (const material of Array.isArray(materials) ? materials : []) {
+    const id = clean(material?.id || material?.type);
+    if (id && !incomingById.has(id)) incomingById.set(id, material);
   }
-  return filtered;
+  return defaults.map((defaultMaterial) => {
+    const id = clean(defaultMaterial.id || defaultMaterial.type);
+    return { ...(incomingById.get(id) || {}), ...defaultMaterial };
+  });
 }
 
 function normalizeVenue(venue = {}) {
