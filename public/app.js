@@ -90,6 +90,14 @@ document.addEventListener("click", async (event) => {
       return;
     }
 
+    if (action === "cancel-booking") {
+      await runCommand("cancel_booking", {
+        candidateId: requireCurrentCandidateId()
+      }, button);
+      showToast("Запись отменена");
+      return;
+    }
+
     if (action === "waitlist-slot-response") {
       await runCommand("waitlist_slot_response", {
         candidateId: button.dataset.candidateId || requireCurrentCandidateId(),
@@ -343,6 +351,7 @@ document.addEventListener("submit", async (event) => {
 async function loadState() {
   const response = await fetchJson("/api/state");
   state = response.state;
+  reconcileRememberedCandidate();
   if (isDeveloperUser() && !localStorage.getItem("lh_interviews_role")) {
     ui.role = "recruiter";
   }
@@ -357,6 +366,7 @@ async function runCommand(action, payload, feedbackButton = null) {
     body: JSON.stringify({ action, payload })
   });
   state = response.state;
+  reconcileRememberedCandidate();
   rememberActionFeedback(feedbackButton);
   render();
   return response;
@@ -483,7 +493,7 @@ function render() {
 
 function renderCandidateView(candidate) {
   const hasBooking = candidateHasActiveBooking(candidate);
-  const openSlots = hasBooking ? [] : uniqueOpenCandidateSlots();
+  const openSlots = hasBooking ? [] : uniqueOpenCandidateSlots(candidate);
   const bookedSlot = hasBooking ? state.slots.find((slot) => slot.id === candidate.interviewSlotId) : null;
 
   return `
@@ -521,10 +531,18 @@ function renderCandidateView(candidate) {
 }
 
 function renderLockedBookingNotice(slot, candidate) {
+  const canCancel = canCancelBooking(candidate);
   return `
     <div class="notice locked-booking-notice">
-      <b>${slot ? escapeHtml(slotLabel(slot)) : "Дата собеседования выбрана"}</b>
-      <span>${escapeHtml(journalStatusLabel(candidate))}</span>
+      <div>
+        <b>${slot ? escapeHtml(slotLabel(slot)) : "Дата собеседования выбрана"}</b>
+        <span>${escapeHtml(journalStatusLabel(candidate))}</span>
+      </div>
+      ${canCancel ? `
+        <button type="button" class="danger" data-action="cancel-booking" data-candidate-id="${escapeAttr(candidate.id)}">
+          Отменить запись
+        </button>
+      ` : ""}
     </div>
   `;
 }
@@ -582,10 +600,11 @@ function renderCandidateSlot(slot) {
   `;
 }
 
-function uniqueOpenCandidateSlots() {
+function uniqueOpenCandidateSlots(candidate = null) {
   const seen = new Set();
   return state.slots
-    .filter((slot) => slot.status === "open")
+    .filter((slot) => slot.status === "open" && slot.availableSeats > 0)
+    .filter((slot) => !candidate?.interviewSlotId || slot.id !== candidate.interviewSlotId)
     .filter((slot) => {
       const key = [slot.date, slot.time, slot.venueId || slot.venue].map((value) => String(value || "").trim().toLowerCase()).join("|");
       if (seen.has(key)) return false;
@@ -619,7 +638,7 @@ function renderNotification(notification) {
             data-slot-id="${escapeAttr(slot.id)}"
             data-candidate-id="${escapeAttr(notification.candidateId)}"
           >
-            Записаться на эту дату
+            Записаться
           </button>
           <button
             type="button"
@@ -629,7 +648,7 @@ function renderNotification(notification) {
             data-slot-id="${escapeAttr(slot.id)}"
             data-candidate-id="${escapeAttr(notification.candidateId)}"
           >
-            Остаться в очереди
+            Ждать следующую дату
           </button>
         </div>
       ` : ""}
@@ -667,15 +686,59 @@ function renderCandidateStatus(candidate) {
         <div class="candidate-stage-label">Этап: <b>${escapeHtml(stageLabel(candidate))}</b></div>
         ${renderStageTrack(candidate)}
       </div>
+      ${renderCandidateHistory(candidate)}
       ${canRebook ? `
         <div class="candidate-actions">
-          <button type="button" class="primary" data-action="rebook-interest" data-intent="waitlist">Уведомить о следующем</button>
-          ${state.slots.find((item) => item.status === "open" && item.availableSeats > 0) ? `
-            <button type="button" class="secondary" data-action="rebook-interest" data-intent="book_slot" data-slot-id="${escapeAttr(state.slots.find((item) => item.status === "open" && item.availableSeats > 0).id)}">Записаться снова</button>
-          ` : ""}
+          <button type="button" class="primary" data-action="rebook-interest" data-intent="waitlist">Ждать следующую дату</button>
           <button type="button" class="danger" data-action="rebook-interest" data-intent="not_interested">Больше не интересно</button>
         </div>
       ` : ""}
+    </div>
+  `;
+}
+
+function renderCandidateHistory(candidate) {
+  const items = Array.isArray(candidate.interviewHistory) ? candidate.interviewHistory.slice(0, 3) : [];
+  if (!items.length && !candidate.interviewSlotId) return "";
+  const currentSlot = candidate.interviewSlotId ? state.slots.find((slot) => slot.id === candidate.interviewSlotId) : null;
+  const historyItems = [
+    currentSlot
+      ? {
+          slotId: currentSlot.id,
+          date: currentSlot.date,
+          time: currentSlot.time,
+          venue: currentSlot.venue,
+          outcome: candidate.status,
+          attendanceStatus: candidate.attendanceStatus,
+          confirmationStatus: candidate.confirmationStatus
+        }
+      : null,
+    ...items
+  ].filter(Boolean);
+  const uniqueItems = [];
+  const seen = new Set();
+  for (const item of historyItems) {
+    const key = `${item.slotId || item.date}|${item.outcome || item.status || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueItems.push(item);
+  }
+
+  return `
+    <div class="candidate-history">
+      <b>История собеседований</b>
+      <div class="candidate-history-list">
+        ${uniqueItems.slice(0, 3).map(renderCandidateHistoryItem).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderCandidateHistoryItem(item) {
+  return `
+    <div class="candidate-history-item">
+      <span>${escapeHtml([formatDate(item.date), item.time, item.venue].filter(Boolean).join(" · "))}</span>
+      <b>${escapeHtml(historyOutcomeLabel(item))}</b>
     </div>
   `;
 }
@@ -1053,9 +1116,9 @@ function renderAttendanceCorrection(candidate) {
 }
 
 function renderDatesTab() {
-  const waitlist = state.candidates.filter((candidate) => candidate.status === "waitlist");
-  const selectedSlot = visibleActiveSlots().find((slot) => slot.id === ui.selectedSlotId);
-  const waitlistNotified = waitlistNotifiedForSlot(ui.selectedSlotId);
+  const waitlist = state.candidates
+    .filter((candidate) => candidate.status === "waitlist")
+    .sort(compareWaitlistCandidates);
   const shownActiveSlots = visibleActiveSlots();
   const visibleArchivedSlots = filterArchivedSlots(archivedSlots());
   const createFeedback = ui.createSlotFeedback;
@@ -1105,17 +1168,9 @@ function renderDatesTab() {
         <div class="panel-head">
           <div class="panel-title-stack">
             <h2>Лист ожидания</h2>
-            ${selectedSlot ? `<span>Дата для рассылки: ${escapeHtml(slotLabel(selectedSlot))}</span>` : ""}
+            <span>Автоуведомление идет при создании новой даты, по очереди и по количеству мест.</span>
           </div>
-          <button
-            type="button"
-            class="waitlist-action ${waitlistNotified ? "success" : "secondary"}${actionDoneClass(waitlistNotified, "notify-waitlist", { slotId: ui.selectedSlotId })}"
-            data-action="notify-waitlist"
-            data-slot-id="${escapeAttr(ui.selectedSlotId)}"
-            ${!waitlist.length || !selectedSlot ? "disabled aria-disabled=\"true\"" : ""}
-          >
-            ${waitlistNotified ? "Уведомлен" : "Уведомить"}
-          </button>
+          <span class="pill accent">${waitlist.length}</span>
         </div>
         <div class="candidate-list">
           ${waitlist.map(renderWaitlistCandidate).join("") || '<div class="empty">Список ожидания пуст</div>'}
@@ -1201,6 +1256,14 @@ function renderWaitlistCandidate(candidate, index = 0) {
       </div>
     </article>
   `;
+}
+
+function compareWaitlistCandidates(left, right) {
+  const leftDate = left.waitlistJoinedAt || left.createdAt || "";
+  const rightDate = right.waitlistJoinedAt || right.createdAt || "";
+  const byDate = String(leftDate).localeCompare(String(rightDate));
+  if (byDate !== 0) return byDate;
+  return String(left.id).localeCompare(String(right.id));
 }
 
 function renderArchivedSlot(slot) {
@@ -1454,6 +1517,10 @@ function candidateHasActiveBooking(candidate) {
   return ["booked", "confirmation_pending", "confirmed", "attended", "registration_pending", "registered", "ready_for_internship"].includes(candidate.status);
 }
 
+function canCancelBooking(candidate) {
+  return candidateHasActiveBooking(candidate) && ["booked", "confirmation_pending", "confirmed"].includes(candidate.status);
+}
+
 function candidateCardTone(candidate) {
   if (candidate.status === "left_after_interview") return "left";
   if (isArrivedCandidate(candidate)) return "arrived";
@@ -1494,7 +1561,7 @@ function renderVenueOptions() {
   const venues = state.settings?.interviewVenues || [];
   return venues
     .map((venue) => `
-      <option value="${escapeAttr(venue.id)}">${escapeHtml([venue.name, venue.address].filter(Boolean).join(" · "))}</option>
+      <option value="${escapeAttr(venue.id)}">${escapeHtml(venue.name || "LOFT HALL")}</option>
     `)
     .join("");
 }
@@ -1594,7 +1661,7 @@ function candidateStages(candidate) {
       key: "resources",
       label: "Материалы",
       title: resourceCount ? `Материалы ${resourceCount}/${resourceTotal}` : "Материалы после собеса",
-      description: "Пришедшим отправляются регистрация, рабочие ссылки и оформление самозанятости.",
+      description: "Пришедшим отправляются регистрация, бот смен, группа, база знаний и самозанятость.",
       icon: "send"
     }
   ];
@@ -1695,11 +1762,15 @@ function collectCandidateProfile() {
     note: data.note?.trim()
   };
 
-  if (!candidate.name || !candidate.telegram || !candidate.phone) {
-    showToast("ФИО, Telegram и телефон обязательны");
+  const validation = validateCandidateProfile(candidate);
+  if (!validation.ok) {
+    showToast(validation.message);
     return null;
   }
 
+  candidate.name = validation.name;
+  candidate.phone = validation.phone;
+  candidate.telegram = cleanTelegram(candidate.telegram);
   return candidate;
 }
 
@@ -1711,8 +1782,13 @@ function scheduleCandidateAutosave() {
     if (!form || !status) return;
 
     const data = Object.fromEntries(new FormData(form));
-    if (!data.name?.trim() || !data.telegram?.trim() || !data.phone?.trim()) {
-      status.textContent = "Заполните ФИО, Telegram и телефон";
+    const validation = validateCandidateProfile({
+      name: data.name?.trim(),
+      telegram: data.telegram?.trim(),
+      phone: data.phone?.trim()
+    });
+    if (!validation.ok) {
+      status.textContent = validation.message;
       return;
     }
 
@@ -1723,9 +1799,9 @@ function scheduleCandidateAutosave() {
         payload: {
           candidateId: ui.candidateId || undefined,
           telegramId: data.telegramId?.trim(),
-          name: data.name.trim(),
-          phone: data.phone.trim(),
-          telegram: data.telegram?.trim(),
+          name: validation.name,
+          phone: validation.phone,
+          telegram: cleanTelegram(data.telegram),
           source: "Мини-приложение"
         }
       };
@@ -1759,6 +1835,12 @@ function rememberCandidate(candidateId) {
 function clearRememberedCandidate() {
   ui.candidateId = "";
   localStorage.removeItem("lh_interviews_candidate_id");
+}
+
+function reconcileRememberedCandidate() {
+  if (!ui.candidateId || !state) return;
+  const exists = state.candidates.some((candidate) => candidate.id === ui.candidateId);
+  if (!exists) clearRememberedCandidate();
 }
 
 function getCurrentCandidate() {
@@ -1795,6 +1877,43 @@ function cleanTelegram(value) {
   return tag.startsWith("@") ? tag : `@${tag}`;
 }
 
+function validateCandidateProfile(candidate = {}) {
+  const name = String(candidate.name || "").trim().replace(/\s+/g, " ");
+  if (!isValidFullName(name)) {
+    return { ok: false, message: "Укажите имя и фамилию без цифр" };
+  }
+
+  const phone = normalizeRussianPhoneInput(candidate.phone);
+  if (!phone) {
+    return { ok: false, message: "Телефон нужен в формате +7XXXXXXXXXX" };
+  }
+
+  if (!String(candidate.telegram || "").trim()) {
+    return { ok: false, message: "Telegram обязателен" };
+  }
+
+  return { ok: true, name, phone };
+}
+
+function isValidFullName(value) {
+  const text = String(value || "").trim();
+  if (text.length < 5 || text.length > 120) return false;
+  if (/[\d_/@#$%^&*=+{}[\]<>|~]/.test(text)) return false;
+  const parts = text.split(" ").filter(Boolean);
+  if (parts.length < 2) return false;
+  return parts.every((part) => /^[A-Za-zА-Яа-яЁё-]{2,}$/.test(part));
+}
+
+function normalizeRussianPhoneInput(value) {
+  const raw = String(value || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (raw.startsWith("+7") && digits.length === 11 && digits.startsWith("7")) return `+${digits}`;
+  if (!raw.startsWith("+") && digits.length === 11 && digits.startsWith("8")) return `+7${digits.slice(1)}`;
+  if (!raw.startsWith("+") && digits.length === 11 && digits.startsWith("7")) return `+${digits}`;
+  if (!raw.startsWith("+") && digits.length === 10 && digits.startsWith("9")) return `+7${digits}`;
+  return "";
+}
+
 function candidateNotifications(candidateId) {
   return (state.notifications || [])
     .filter((notification) => notification.candidateId === candidateId)
@@ -1823,6 +1942,19 @@ function statusLabel(status) {
     not_interested: "Не актуально"
   };
   return labels[status] || status || "Статус";
+}
+
+function historyOutcomeLabel(item = {}) {
+  const outcome = item.outcome || item.status || "";
+  if (outcome === "no_show") return "Не пришел";
+  if (outcome === "cancelled_booking" || outcome === "declined_confirmation" || outcome === "declined_before_interview") return "Отказ";
+  if (outcome === "joined_waitlist") return "Лист ожидания";
+  if (outcome === "waitlist_booking" || outcome === "rebooked" || outcome === "booked") return "Запись";
+  if (outcome === "confirmed") return "Подтвердил";
+  if (item.attendanceStatus === "arrived") return "Пришел";
+  if (item.attendanceStatus === "no_show") return "Не пришел";
+  if (item.attendanceStatus === "declined_before") return "Отказ";
+  return statusLabel(outcome);
 }
 
 function stageLabel(candidate) {
@@ -1917,6 +2049,8 @@ function eventTypeLabel(type) {
     waitlist_notified: "Ожидание уведомлено",
     confirmation_requested: "Запрос подтверждения",
     candidate_confirmation_answered: "Ответ кандидата",
+    candidate_confirmation_answer_ignored: "Повторный ответ",
+    candidate_booking_cancelled: "Запись отменена",
     attendance_marked: "Журнал явки",
     interview_result_set: "Итог собеса",
     resources_sent: "Материалы отправлены",

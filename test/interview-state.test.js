@@ -15,7 +15,7 @@ test("new interview date automatically notifies waitlist candidates", () => {
       payload: {
         date: "2026-08-20",
         time: "13:00",
-        venueId: "loft3",
+        venueId: "loft23",
         seats: 8,
         bookingText: "Вход со стороны главной проходной.",
         directionsVideoUrl: "https://example.com/loft3-route"
@@ -28,7 +28,7 @@ test("new interview date automatically notifies waitlist candidates", () => {
   const slot = state.slots.find((item) => item.id === result.result.slotId);
   assert.equal(result.result.notifiedCount, waitlistBefore);
   assert.equal(slot.title, "Собеседование LOFT HALL");
-  assert.equal(slot.venue, "LOFT#3");
+  assert.equal(slot.venue, "LOFT#2/3");
   assert.equal(slot.venueAddress, "ул. Ленинская Слобода, 26с11");
   assert.equal(slot.bookingText, "Вход со стороны главной проходной.");
   assert.equal(slot.directionsVideoUrl, "https://example.com/loft3-route");
@@ -59,7 +59,7 @@ test("active interview date cannot be duplicated by date and time", () => {
           payload: {
             date: "2026-08-13",
             time: "12:00",
-            venueId: "loft4",
+            venueId: "loft23",
             seats: 8
           }
         },
@@ -81,7 +81,7 @@ test("active interview date cannot be duplicated by date and time", () => {
       payload: {
         date: "2026-08-13",
         time: "12:00",
-        venueId: "loft4",
+        venueId: "loft23",
         seats: 8
       }
     },
@@ -127,20 +127,12 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     state.settings.directionMaterials.find((item) => item.id === "loft_23_route").telegramFileId,
     "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E"
   );
-  assert.equal(
-    state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramFileId,
-    "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E"
-  );
   assert.equal(state.settings.directionMaterials.find((item) => item.id === "loft_23_route").telegramMethod, "video");
-  assert.equal(state.settings.directionMaterials.find((item) => item.id === "loft_4_route").telegramMethod, "video");
   assert.equal(
-    state.settings.interviewVenues.find((item) => item.id === "loft1").address,
-    "ул. Ленинская Слобода, 26, стр. 35"
-  );
-  assert.equal(
-    state.settings.interviewVenues.find((item) => item.id === "loft3").address,
+    state.settings.interviewVenues.find((item) => item.id === "loft23").address,
     "ул. Ленинская Слобода, 26с11"
   );
+  assert.deepEqual(state.settings.interviewVenues.map((item) => item.id), ["loft23"]);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -166,13 +158,13 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
     (item) => item.candidateId === candidate.id && item.type === "booking_materials"
   );
   assert.equal(bookingMaterials.slotId, "slot-002");
-  assert.equal(bookingMaterials.title, "");
-  assert.match(bookingMaterials.message, /Ближайшее собеседование состоится/);
-  assert.match(bookingMaterials.message, /При себе необходимо иметь только паспорт и ручку/);
-  assert.match(bookingMaterials.message, /два комплекта униформы/);
+  assert.equal(bookingMaterials.title, "📌 Важная информация перед собеседованием");
+  assert.match(bookingMaterials.message, /Ждём вас/);
+  assert.match(bookingMaterials.message, /паспорт/);
+  assert.match(bookingMaterials.message, /2 комплекта формы/);
   assert.equal(bookingMaterials.media.length, 1);
   assert.equal(bookingMaterials.media[0].type, "video");
-  assert.equal(bookingMaterials.media[0].fileId, "BAACAgIAAxkBAAEN-mtqfJMfDgp6Um1ZOtCAnaofrk7XtAAC34EAArrpUEsVzMBYFr-_DT0E");
+  assert.equal(bookingMaterials.media[0].fileId, "BAACAgIAAxkBAAEN-nBqfJNGc4zIAlyz1Vtm5coWB8LiigACWKQAAjIB4EsUwGqbL0OWxT0E");
 
   ({ state } = applyInterviewCommand(
     state,
@@ -232,7 +224,7 @@ test("candidate can confirm, miss interview, and return to waitlist", () => {
   assert.equal(noShow.status, "no_show");
   const noShowFollowup = state.notifications.find((item) => item.candidateId === candidate.id && item.type === "no_show_followup");
   assert.ok(noShowFollowup);
-  assert.match(noShowFollowup.message, /интерес к LOFT HALL/);
+  assert.match(noShowFollowup.message, /работа в LOFT HALL/);
 
   ({ state } = applyInterviewCommand(
     state,
@@ -410,6 +402,126 @@ test("candidate telegram is required for shared candidate records", () => {
   );
 });
 
+test("candidate profile requires readable full name and Russian phone", () => {
+  const state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  assert.throws(
+    () =>
+      applyInterviewCommand(
+        state,
+        {
+          action: "upsert_candidate",
+          payload: {
+            name: "Тест123",
+            phone: "+7 900 000-00-00",
+            telegram: "@bad_name",
+            source: "Мини-приложение"
+          }
+        },
+        { now: "2026-08-10T10:00:00.000Z" }
+      ),
+    /ФИО/
+  );
+
+  assert.throws(
+    () =>
+      applyInterviewCommand(
+        state,
+        {
+          action: "upsert_candidate",
+          payload: {
+            name: "Нормальный Кандидат",
+            phone: "+1 555 000-00-00",
+            telegram: "@bad_phone",
+            source: "Мини-приложение"
+          }
+        },
+        { now: "2026-08-10T10:01:00.000Z" }
+      ),
+    /Телефон/
+  );
+});
+
+test("candidate can cancel booking without entering waitlist and frees seat", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+  const slotBefore = state.slots.find((item) => item.id === "slot-002");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "book_slot",
+      payload: {
+        slotId: "slot-002",
+        candidate: {
+          telegramId: "666666666",
+          telegram: "@cancel_candidate",
+          name: "Кандидат Отмена",
+          phone: "8 900 666-66-66",
+          source: "Telegram"
+        }
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  ));
+
+  const candidate = state.candidates.find((item) => item.telegramId === "666666666");
+  assert.equal(candidate.phone, "+79006666666");
+  assert.equal(state.slots.find((item) => item.id === "slot-002").availableSeats, slotBefore.availableSeats - 1);
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "cancel_booking", payload: { candidateId: candidate.id } },
+    { now: "2026-08-10T10:10:00.000Z" }
+  ));
+
+  const cancelled = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(cancelled.status, "declined_before_interview");
+  assert.equal(cancelled.confirmationStatus, "declined");
+  assert.notEqual(cancelled.status, "waitlist");
+  assert.equal(cancelled.interviewHistory[0].outcome, "cancelled_booking");
+  assert.equal(state.slots.find((item) => item.id === "slot-002").availableSeats, slotBefore.availableSeats);
+});
+
+test("waitlist notifications follow queue order and seat limit", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "join_waitlist",
+      payload: {
+        candidate: {
+          telegramId: "888888888",
+          telegram: "@second_wait",
+          name: "Второй Ожидающий",
+          phone: "+7 900 888-88-88",
+          source: "Telegram"
+        }
+      }
+    },
+    { now: "2026-08-10T09:10:00.000Z" }
+  ));
+
+  const result = applyInterviewCommand(
+    state,
+    {
+      action: "create_slot",
+      payload: {
+        date: "2026-08-22",
+        time: "12:00",
+        venueId: "loft23",
+        seats: 1
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  );
+
+  state = result.state;
+  assert.equal(result.result.notifiedCount, 1);
+  assert.equal(state.candidates.find((candidate) => candidate.id === "cand-003").waitlistTargetSlotId, result.result.slotId);
+  assert.equal(state.candidates.find((candidate) => candidate.telegramId === "888888888").waitlistTargetSlotId, null);
+});
+
 test("slot template can be cleared without restoring default booking text", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
 
@@ -500,9 +612,9 @@ test("arrived candidate receives resources without interview result buttons", ()
 
   const withSecondResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withSecondResource.resourceStepsSent.length, 2);
-  assert.equal(withSecondResource.resourceStepsSent[1].type, "unattested_group");
+  assert.equal(withSecondResource.resourceStepsSent[1].type, "staff_bot");
   assert.match(
-    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_unattested_group").message,
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_staff_bot").message,
     /@LoftHallStaffBot/
   );
 
@@ -514,16 +626,54 @@ test("arrived candidate receives resources without interview result buttons", ()
 
   const withThirdResource = state.candidates.find((item) => item.id === candidate.id);
   assert.equal(withThirdResource.resourceStepsSent.length, 3);
-  assert.equal(withThirdResource.resourceStepsSent[2].type, "self_employment");
+  assert.equal(withThirdResource.resourceStepsSent[2].type, "unattested_group");
   assert.match(
-    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_self_employment").message,
-    /КАК СТАТЬ САМОЗАНЯТЫМ/
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_unattested_group").message,
+    /не прошли аттестацию/
   );
 
   ({ state } = applyInterviewCommand(
     state,
-    { action: "record_link_click", payload: { candidateId: candidate.id, linkType: "registration_bot" } },
+    { action: "send_resource_step", payload: { slotId: "slot-002" } },
     { now: "2026-08-13T12:37:00.000Z" }
+  ));
+
+  const withFourthResource = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(withFourthResource.resourceStepsSent.length, 4);
+  assert.equal(withFourthResource.resourceStepsSent[3].type, "helper_bot");
+  assert.match(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "resource_helper_bot").message,
+    /@LOFT_HELPER_V2_BOT/
+  );
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "send_resource_step", payload: { slotId: "slot-002" } },
+    { now: "2026-08-13T12:38:00.000Z" }
+  ));
+
+  const withFifthResource = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(withFifthResource.resourceStepsSent.length, 5);
+  assert.equal(withFifthResource.resourceStepsSent[4].type, "self_employment");
+  const selfEmploymentNotification = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "resource_self_employment"
+  );
+  assert.match(
+    selfEmploymentNotification.message,
+    /самозанятость/
+  );
+  assert.deepEqual(selfEmploymentNotification.actions, [
+    {
+      label: "💳 Самозанятость и выплаты",
+      callbackData: "",
+      url: "https://t.me/LOFT_HELPER_V2_BOT"
+    }
+  ]);
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "record_link_click", payload: { candidateId: candidate.id, linkType: "registration_bot" } },
+    { now: "2026-08-13T12:39:00.000Z" }
   ));
   assert.equal(state.candidates.find((item) => item.id === candidate.id).linkClicks.length, 1);
 });
@@ -589,5 +739,5 @@ test("recruiter can clear archive and all interview data", () => {
   assert.equal(state.candidates.length, 0);
   assert.equal(state.notifications.length, 0);
   assert.equal(state.events.length, 0);
-  assert.equal(state.settings.interviewVenues.some((venue) => venue.id === "loft4"), true);
+  assert.deepEqual(state.settings.interviewVenues.map((venue) => venue.id), ["loft23"]);
 });

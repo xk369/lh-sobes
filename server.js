@@ -335,8 +335,9 @@ function splitTelegramText(text, limit = 3500) {
 function replyMarkupForNotification(notification, candidate) {
   const actions = Array.isArray(notification.actions) ? notification.actions : [];
   const buttons = actions
-    .filter((action) => action.label && action.callbackData)
+    .filter((action) => action.label && (action.callbackData || action.url))
     .map((action) => {
+      if (action.url) return { text: action.label, url: action.url };
       const actionUrl = telegramActionUrl(action, candidate);
       if (actionUrl) return { text: action.label, url: actionUrl };
       return { text: action.label, callback_data: action.callbackData };

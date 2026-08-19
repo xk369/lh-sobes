@@ -9,7 +9,7 @@ import { chromium } from "playwright";
 const rootDir = process.cwd();
 const tmpDir = path.join(os.tmpdir(), "lh-sobes-playwright");
 const dataFile = path.join(tmpDir, `app-smoke-${Date.now()}.json`);
-const candidateName = `QA Полный Тест ${Date.now()}`;
+const candidateName = "Кандидат Полный Тест";
 const candidateTelegram = `@qa_${Date.now()}`;
 const candidatePhone = "+7 900 999-99-99";
 
@@ -76,6 +76,7 @@ try {
   await page.locator("#slot-form").waitFor({ timeout: 10000 });
   assert.equal(await page.getByText("Материалы после записи").count(), 0, "slot form should not show booking materials block");
   assert.equal(await page.locator("#slot-form [name='bookingText'], #slot-form [name='directionsVideoUrl']").count(), 0, "slot form should not expose manual materials inputs");
+  assert.equal(await page.locator(".waitlist-action").count(), 0, "waitlist should not expose manual notify button");
   await assertSlotDateInputFits(page);
   await assertWaitlistActionFits(page);
   await assertNoViewportOverflow(page, "recruiter dates");
@@ -96,8 +97,8 @@ try {
   assert.equal(await arrivedCard.locator(".attendance-quick-actions").count(), 0, "marked candidate should not keep quick attendance buttons");
   await assertNoViewportOverflow(page, "recruiter arrived");
 
-  await page.getByRole("button", { name: /Отправить: Регистрация/ }).click();
-  await page.locator(".resource-progress-panel .pill", { hasText: "1/3 отправлено" }).waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: /Отправить: 1\/5.*Регистрация/ }).click();
+  await page.locator(".resource-progress-panel .pill", { hasText: "1/5 отправлено" }).waitFor({ timeout: 10000 });
 
   await arrivedCard.locator("summary.candidate-name-summary").click();
   const gridColumns = await arrivedCard.locator(".candidate-info-grid").evaluate((element) =>
