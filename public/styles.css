@@ -2053,12 +2053,14 @@ button.is-loading:disabled {
 }
 
 .analytics-period-panel,
+.analytics-results,
 .analytics-detail-section,
 .analytics-breakdown,
 .analytics-group-list,
 .analytics-slot-list,
 .analytics-person-list,
 .analytics-person-body,
+.analytics-search,
 .analytics-history,
 .analytics-history-list {
   display: grid;
@@ -2106,7 +2108,7 @@ button.is-loading:disabled {
 
 .analytics-entry-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2181,7 +2183,6 @@ button.is-loading:disabled {
 .analytics-history-row span,
 .analytics-slot-main span,
 .analytics-person-title small,
-.analytics-group-head span,
 .analytics-mini-count small {
   color: var(--muted);
   font-size: 12px;
@@ -2216,25 +2217,27 @@ button.is-loading:disabled {
 }
 
 .analytics-slot-card summary::-webkit-details-marker,
+.analytics-group-details summary::-webkit-details-marker,
 .analytics-person-card summary::-webkit-details-marker {
   display: none;
 }
 
 .analytics-slot-card summary::marker,
+.analytics-group-details summary::marker,
 .analytics-person-card summary::marker {
   content: "";
 }
 
 .analytics-slot-main,
 .analytics-person-title > span:last-child,
-.analytics-group-head > div {
+.analytics-group-title {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
 .analytics-slot-main b,
-.analytics-group-head b {
+.analytics-group-title b {
   color: var(--text);
   font-size: 16px;
   font-weight: 950;
@@ -2267,9 +2270,30 @@ button.is-loading:disabled {
 
 .analytics-group-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 0;
   align-items: center;
+}
+
+.analytics-group-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.analytics-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.analytics-group-title b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.analytics-group-title .pill {
+  flex: 0 0 auto;
 }
 
 .analytics-person-card {
@@ -2360,6 +2384,10 @@ button.is-loading:disabled {
 
 .analytics-person-body {
   padding-top: 10px;
+}
+
+.analytics-search {
+  margin: 0;
 }
 
 .analytics-person-grid {

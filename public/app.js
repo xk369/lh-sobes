@@ -11,6 +11,7 @@ const ui = {
   analyticsToInput: "",
   analyticsPreset: "all",
   analyticsView: "slots",
+  analyticsCandidateSearch: "",
   stageHelpKey: "",
   createSlotFeedback: null,
   actionFeedback: {}
@@ -80,7 +81,7 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "set-analytics-view") {
-      ui.analyticsView = button.dataset.analyticsView || "slots";
+      ui.analyticsView = normalizeAnalyticsView(button.dataset.analyticsView);
       render();
       return;
     }
@@ -332,13 +333,13 @@ document.addEventListener("input", (event) => {
   }
 
   if (event.target.matches("[data-analytics-date]")) {
-    const field = event.target.dataset.analyticsDate === "to" ? "To" : "From";
-    const inputKey = `analytics${field}Input`;
-    const valueKey = `analytics${field}`;
-    ui.analyticsPreset = "custom";
-    ui[inputKey] = event.target.value;
-    ui[valueKey] = parseRuDateInput(event.target.value);
-    render();
+    handleAnalyticsDateInput(event.target);
+    return;
+  }
+
+  if (event.target.matches("[data-analytics-search]")) {
+    ui.analyticsCandidateSearch = event.target.value;
+    refreshAnalyticsCandidateResults();
     return;
   }
 
@@ -1496,12 +1497,13 @@ function renderResourceCandidate(candidate, index = 0) {
 
 function renderAnalyticsTab() {
   const analytics = analyticsData();
+  ui.analyticsView = normalizeAnalyticsView(ui.analyticsView);
   return `
     <section class="panel analytics-panel">
       <div class="panel-head">
         <div class="panel-title-stack">
           <h2>Аналитика</h2>
-          <span>${escapeHtml(analytics.periodLabel)}</span>
+          <span data-analytics-period-label>${escapeHtml(analytics.periodLabel)}</span>
         </div>
         <button
           type="button"
@@ -1514,9 +1516,7 @@ function renderAnalyticsTab() {
       </div>
 
       ${renderAnalyticsPeriodControls()}
-      ${renderAnalyticsEntryGrid(analytics)}
-      ${renderAnalyticsBreakdown(analytics)}
-      ${renderAnalyticsDetail(analytics)}
+      ${renderAnalyticsResults(analytics)}
     </section>
   `;
 }
@@ -1580,7 +1580,6 @@ function renderAnalyticsEntryGrid(analytics) {
     <div class="analytics-entry-grid">
       ${renderAnalyticsEntry("slots", "Собесы", analytics.metrics.slots, "Даты за выбранный период")}
       ${renderAnalyticsEntry("candidates", "Кандидаты", analytics.metrics.candidates, "Все кандидаты в периоде")}
-      ${renderAnalyticsEntry("completed", "Дошли до 5/5", analytics.metrics.completedMaterials, "Получили все материалы")}
     </div>
   `;
 }
@@ -1600,32 +1599,18 @@ function renderAnalyticsEntry(view, label, value, note) {
   `;
 }
 
-function renderAnalyticsBreakdown(analytics) {
-  const rows = [
-    ["Записаны / ждут собес", analytics.metrics.bookedPending],
-    ["Пришли, материалы не все", analytics.metrics.needsMaterials],
-    ["Получили 5/5", analytics.metrics.completedMaterials],
-    ["Не пришли", analytics.metrics.noShow],
-    ["Отказ после собеса", analytics.metrics.leftAfter],
-    ["Отказались заранее", analytics.metrics.cancelled],
-    ["Не подтвердили", analytics.metrics.noConfirmation]
-  ].filter(([, value]) => value > 0);
-
+function renderAnalyticsResults(analytics) {
   return `
-    <section class="analytics-breakdown">
-      <div class="panel-head compact">
-        <h3>Разбор</h3>
-        <span class="pill">${analytics.metrics.losses} потерь</span>
-      </div>
-      <div class="analytics-breakdown-table">
-        ${rows.map(([label, value]) => `
-          <div class="analytics-breakdown-row">
-            <span>${escapeHtml(label)}</span>
-            <b>${escapeHtml(value)}</b>
-          </div>
-        `).join("") || '<div class="empty">Данных для разбора пока нет</div>'}
-      </div>
-    </section>
+    <div class="analytics-results" data-analytics-results>
+      ${renderAnalyticsResultsBody(analytics)}
+    </div>
+  `;
+}
+
+function renderAnalyticsResultsBody(analytics) {
+  return `
+    ${renderAnalyticsEntryGrid(analytics)}
+    ${renderAnalyticsDetail(analytics)}
   `;
 }
 
@@ -1634,16 +1619,13 @@ function renderAnalyticsDetail(analytics) {
     return renderAnalyticsCandidatesView("Кандидаты", analytics.rows, "Кандидаты сгруппированы по итоговому состоянию. Детали открываются по нажатию на ФИО.");
   }
 
-  if (ui.analyticsView === "completed") {
-    const rows = analytics.rows.filter((row) => row.groupKey === "completed");
-    return renderAnalyticsCandidatesView("Дошли до 5/5", rows, "Финальный список кандидатов, которым отправлены все пять материалов.");
-  }
-
   return renderAnalyticsSlotsView(analytics);
 }
 
 function renderAnalyticsSlotsView(analytics) {
   const slots = analytics.slots.slice().sort(compareSlotsDesc);
+  const firstSlotWithCandidates = slots.findIndex((slot) => analytics.rows.some((row) => row.slot?.id === slot.id));
+  const openSlotIndex = firstSlotWithCandidates >= 0 ? firstSlotWithCandidates : 0;
   return `
     <section class="analytics-detail-section">
       <div class="panel-head compact">
@@ -1654,7 +1636,7 @@ function renderAnalyticsSlotsView(analytics) {
         <span class="pill accent">${slots.length}</span>
       </div>
       <div class="analytics-slot-list">
-        ${slots.map((slot, index) => renderAnalyticsSlot(slot, analytics.rows, index === 0)).join("") || '<div class="empty">Собесов за период нет</div>'}
+        ${slots.map((slot, index) => renderAnalyticsSlot(slot, analytics.rows, index === openSlotIndex)).join("") || '<div class="empty">Собесов за период нет</div>'}
       </div>
     </section>
   `;
@@ -1677,7 +1659,7 @@ function renderAnalyticsSlot(slot, allRows, open = false) {
         </span>
       </summary>
       <div class="analytics-group-list">
-        ${groups.map((group) => renderAnalyticsGroup(group)).join("") || '<div class="empty">Кандидатов на этой дате нет</div>'}
+        ${groups.map((group) => renderAnalyticsGroup(group, { collapsible: true })).join("") || '<div class="empty">Кандидатов на этой дате нет</div>'}
       </div>
     </details>
   `;
@@ -1693,7 +1675,7 @@ function renderAnalyticsMiniCount(label, value) {
 }
 
 function renderAnalyticsCandidatesView(title, rows, note) {
-  const groups = groupedAnalyticsRows(rows);
+  const filteredRows = filteredAnalyticsRows(rows);
   return `
     <section class="analytics-detail-section">
       <div class="panel-head compact">
@@ -1701,24 +1683,48 @@ function renderAnalyticsCandidatesView(title, rows, note) {
           <h3>${escapeHtml(title)}</h3>
           <span>${escapeHtml(note)}</span>
         </div>
-        <span class="pill accent">${rows.length}</span>
+        <span class="pill accent" data-analytics-candidates-count>${filteredRows.length}</span>
       </div>
-      <div class="analytics-group-list">
-        ${groups.map((group) => renderAnalyticsGroup(group)).join("") || '<div class="empty">Кандидатов за период нет</div>'}
+      <label class="analytics-search">
+        Поиск
+        <input data-analytics-search value="${escapeAttr(ui.analyticsCandidateSearch)}" placeholder="ФИО, Telegram, телефон" />
+      </label>
+      <div class="analytics-group-list" data-analytics-candidates-results>
+        ${renderAnalyticsCandidateGroups(filteredRows)}
       </div>
     </section>
   `;
 }
 
-function renderAnalyticsGroup(group) {
+function renderAnalyticsCandidateGroups(rows) {
+  const groups = groupedAnalyticsRows(rows);
+  return groups.map((group) => renderAnalyticsGroup(group)).join("") || '<div class="empty">Кандидатов за период нет</div>';
+}
+
+function renderAnalyticsGroup(group, options = {}) {
+  const head = `
+    <div class="analytics-group-title">
+      <b>${escapeHtml(group.title)}</b>
+      <span class="pill ${group.tone}">${group.rows.length}</span>
+    </div>
+  `;
+  if (options.collapsible) {
+    return `
+      <details class="analytics-group analytics-group-details">
+        <summary class="analytics-group-head">
+          ${head}
+        </summary>
+        <div class="analytics-person-list">
+          ${group.rows.map((row, index) => renderAnalyticsCandidateCard(row, index)).join("")}
+        </div>
+      </details>
+    `;
+  }
+
   return `
     <section class="analytics-group">
       <div class="analytics-group-head">
-        <div>
-          <b>${escapeHtml(group.title)}</b>
-          <span>${escapeHtml(group.note)}</span>
-        </div>
-        <span class="pill ${group.tone}">${group.rows.length}</span>
+        ${head}
       </div>
       <div class="analytics-person-list">
         ${group.rows.map((row, index) => renderAnalyticsCandidateCard(row, index)).join("")}
@@ -1748,15 +1754,12 @@ function renderAnalyticsCandidateCard(row, index = 0) {
           ${renderAnalyticsInfo("Адрес", row.slot?.venueAddress || "без адреса")}
           ${renderAnalyticsInfo("Явка", row.attendance)}
           ${renderAnalyticsInfo("Материалы", row.materials)}
-          ${row.lastResourceAt ? renderAnalyticsInfo("Последний материал", formatDateTime(row.lastResourceAt)) : ""}
-          ${row.raw.waitlistJoinedAt ? renderAnalyticsInfo("Очередь", formatDateTime(row.raw.waitlistJoinedAt)) : ""}
         </div>
         ${row.telegram && row.telegram !== "без Telegram" ? `
           <button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(row.telegram)}">
             ${escapeHtml(row.telegram)}
           </button>
         ` : ""}
-        ${renderAnalyticsCandidateHistory(row.raw)}
       </div>
     </details>
   `;
@@ -1767,23 +1770,6 @@ function renderAnalyticsInfo(label, value) {
     <div class="analytics-info-item">
       <span>${escapeHtml(label)}</span>
       <b>${escapeHtml(value || "нет данных")}</b>
-    </div>
-  `;
-}
-
-function renderAnalyticsCandidateHistory(candidate) {
-  const events = analyticsCandidateEvents(candidate).slice(0, 8);
-  return `
-    <div class="analytics-history">
-      <b>История</b>
-      <div class="analytics-history-list">
-        ${events.map((event) => `
-          <div class="analytics-history-row">
-            <span>${escapeHtml(formatDateTime(event.createdAt))}</span>
-            <b>${escapeHtml(event.label)}</b>
-          </div>
-        `).join("") || '<div class="empty">Истории пока нет</div>'}
-      </div>
     </div>
   `;
 }
@@ -1896,6 +1882,19 @@ function groupedAnalyticsRows(rows, options = {}) {
     .filter((group) => group.rows.length > 0);
 }
 
+function filteredAnalyticsRows(rows) {
+  const query = ui.analyticsCandidateSearch.trim().toLowerCase();
+  if (!query) return rows;
+  return rows.filter((row) => [
+    row.name,
+    row.telegram,
+    row.phone,
+    row.slotLabel,
+    row.finalLabel,
+    row.attendance
+  ].some((value) => String(value || "").toLowerCase().includes(query)));
+}
+
 function slotInAnalyticsRange(slot) {
   return dateInRange(slot.date, ui.analyticsFrom, ui.analyticsTo);
 }
@@ -1918,6 +1917,93 @@ function analyticsPeriodLabel() {
   const from = ui.analyticsFrom ? formatDate(ui.analyticsFrom) : "с начала";
   const to = ui.analyticsTo ? formatDate(ui.analyticsTo) : "по сегодня";
   return `${from} - ${to}`;
+}
+
+function normalizeAnalyticsView(view) {
+  return view === "candidates" ? "candidates" : "slots";
+}
+
+function handleAnalyticsDateInput(input) {
+  const field = input.dataset.analyticsDate === "to" ? "To" : "From";
+  const inputKey = `analytics${field}Input`;
+  const valueKey = `analytics${field}`;
+  const rawValue = input.value;
+  const digitsBeforeCursor = rawValue.slice(0, input.selectionStart ?? rawValue.length).replace(/\D/g, "").length;
+  const formatted = formatRuDateInput(input.value);
+  ui.analyticsPreset = "custom";
+  ui[inputKey] = formatted;
+  ui[valueKey] = parseRuDateInput(formatted);
+
+  if (input.value !== formatted) {
+    input.value = formatted;
+    const cursor = cursorForDateDigits(formatted, digitsBeforeCursor);
+    input.setSelectionRange(cursor, cursor);
+  }
+
+  refreshAnalyticsPeriodState();
+  refreshAnalyticsResults();
+}
+
+function refreshAnalyticsPeriodState() {
+  document.querySelectorAll("[data-analytics-preset]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.analyticsPreset === ui.analyticsPreset);
+  });
+  const reset = document.querySelector("[data-action='reset-analytics-period']");
+  if (reset) {
+    const hasPeriod = ui.analyticsPreset !== "all" || ui.analyticsFromInput || ui.analyticsToInput;
+    reset.disabled = !hasPeriod;
+    reset.setAttribute("aria-disabled", String(!hasPeriod));
+  }
+}
+
+function refreshAnalyticsResults() {
+  if (!state) return;
+  ui.analyticsView = normalizeAnalyticsView(ui.analyticsView);
+  const analytics = analyticsData();
+  const period = document.querySelector("[data-analytics-period-label]");
+  if (period) period.textContent = analytics.periodLabel;
+  const exportButton = document.querySelector("[data-action='export-analytics']");
+  if (exportButton) {
+    const disabled = analytics.rows.length === 0 && analytics.slots.length === 0;
+    exportButton.disabled = disabled;
+    exportButton.setAttribute("aria-disabled", String(disabled));
+  }
+  const results = document.querySelector("[data-analytics-results]");
+  if (!results) {
+    render();
+    return;
+  }
+  results.innerHTML = renderAnalyticsResultsBody(analytics);
+}
+
+function refreshAnalyticsCandidateResults() {
+  if (!state) return;
+  const rows = filteredAnalyticsRows(analyticsData().rows);
+  const count = document.querySelector("[data-analytics-candidates-count]");
+  if (count) count.textContent = String(rows.length);
+  const container = document.querySelector("[data-analytics-candidates-results]");
+  if (!container) return;
+  container.innerHTML = renderAnalyticsCandidateGroups(rows);
+}
+
+function formatRuDateInput(value) {
+  const text = String(value || "").trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[3]}.${iso[2]}.${iso[1]}`;
+  const digits = text.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+}
+
+function cursorForDateDigits(formatted, digitCount) {
+  if (digitCount <= 0) return 0;
+  let seen = 0;
+  for (let index = 0; index < formatted.length; index += 1) {
+    if (/\d/.test(formatted[index])) seen += 1;
+    if (seen >= digitCount) return index + 1;
+  }
+  return formatted.length;
 }
 
 async function downloadAnalyticsXlsx() {
@@ -2109,22 +2195,6 @@ function analyticsAttendanceLabel(candidate) {
   if (candidate.confirmationStatus === "confirmed") return "Подтвердил, ждем собес";
   if (candidate.confirmationStatus === "pending") return "Запрос отправлен";
   return "Не отмечен";
-}
-
-function analyticsCandidateEvents(candidate) {
-  const events = (state.events || [])
-    .filter((event) => event.candidateId === candidate.id)
-    .map((event) => ({
-      createdAt: event.createdAt,
-      label: eventTypeLabel(event.type)
-    }));
-  const history = (candidate.interviewHistory || []).map((item) => ({
-    createdAt: item.recordedAt || item.date || candidate.createdAt,
-    label: historyOutcomeLabel(item)
-  }));
-  return [...events, ...history]
-    .filter((event) => event.createdAt)
-    .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
 }
 
 function createXlsxBlob(rows) {
