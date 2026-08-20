@@ -7,6 +7,10 @@ const ui = {
   archiveSearch: "",
   analyticsFrom: "",
   analyticsTo: "",
+  analyticsFromInput: "",
+  analyticsToInput: "",
+  analyticsPreset: "all",
+  analyticsView: "slots",
   stageHelpKey: "",
   createSlotFeedback: null,
   actionFeedback: {}
@@ -70,8 +74,27 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "export-analytics") {
-      downloadAnalyticsXlsx();
-      showToast("Выгрузка XLSX сформирована");
+      const delivery = await downloadAnalyticsXlsx();
+      showToast(delivery === "share" ? "Файл готов для сохранения" : "Файл XLSX скачивается");
+      return;
+    }
+
+    if (action === "set-analytics-view") {
+      ui.analyticsView = button.dataset.analyticsView || "slots";
+      render();
+      return;
+    }
+
+    if (action === "set-analytics-preset") {
+      setAnalyticsPreset(button.dataset.analyticsPreset || "all");
+      render();
+      return;
+    }
+
+    if (action === "reset-analytics-period") {
+      setAnalyticsPreset("all");
+      showToast("Период сброшен");
+      render();
       return;
     }
 
@@ -308,14 +331,13 @@ document.addEventListener("input", (event) => {
     return;
   }
 
-  if (event.target.matches("[data-analytics-from]")) {
-    ui.analyticsFrom = event.target.value;
-    render();
-    return;
-  }
-
-  if (event.target.matches("[data-analytics-to]")) {
-    ui.analyticsTo = event.target.value;
+  if (event.target.matches("[data-analytics-date]")) {
+    const field = event.target.dataset.analyticsDate === "to" ? "To" : "From";
+    const inputKey = `analytics${field}Input`;
+    const valueKey = `analytics${field}`;
+    ui.analyticsPreset = "custom";
+    ui[inputKey] = event.target.value;
+    ui[valueKey] = parseRuDateInput(event.target.value);
     render();
     return;
   }
@@ -1491,101 +1513,288 @@ function renderAnalyticsTab() {
         </button>
       </div>
 
-      <div class="analytics-filter">
-        <label>
-          С
-          <input type="date" data-analytics-from value="${escapeAttr(ui.analyticsFrom)}" lang="ru-RU" />
-        </label>
-        <label>
-          По
-          <input type="date" data-analytics-to value="${escapeAttr(ui.analyticsTo)}" lang="ru-RU" />
-        </label>
-      </div>
-
-      <div class="stats-grid analytics-stats">
-        ${renderAnalyticsStat("Собесов", analytics.metrics.slots)}
-        ${renderAnalyticsStat("Кандидатов", analytics.metrics.candidates)}
-        ${renderAnalyticsStat("Пришли", analytics.metrics.arrived)}
-        ${renderAnalyticsStat("Потеряны", analytics.metrics.lost)}
-        ${renderAnalyticsStat("Получили 5/5", analytics.metrics.completedMaterials)}
-        ${renderAnalyticsStat("Отказ после собеса", analytics.metrics.leftAfter)}
-        ${renderAnalyticsStat("Не пришли", analytics.metrics.noShow)}
-        ${renderAnalyticsStat("Ждут дату", analytics.metrics.waitlist)}
-      </div>
-
-      <section class="analytics-breakdown">
-        <h3>Быстрый срез</h3>
-        <div class="reason-grid">${renderStatsMap({
-          booked: analytics.metrics.booked,
-          arrived: analytics.metrics.arrived,
-          lost: analytics.metrics.lost,
-          completed: analytics.metrics.completedMaterials
-        }, analyticsMetricLabel)}</div>
-      </section>
-
-      <section class="analytics-table-section">
-        <div class="panel-head compact">
-          <h3>Кандидаты</h3>
-          <span class="pill accent">${analytics.rows.length}</span>
-        </div>
-        <div class="analytics-table-wrap">
-          <table class="analytics-table">
-            <thead>
-              <tr>
-                <th>ФИО</th>
-                <th>Telegram</th>
-                <th>Телефон</th>
-                <th>Собес</th>
-                <th>Статус</th>
-                <th>Явка</th>
-                <th>Материалы</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${analytics.rows.map(renderAnalyticsRow).join("") || `
-                <tr>
-                  <td colspan="7" class="analytics-empty">Данных за период нет</td>
-                </tr>
-              `}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      ${renderAnalyticsPeriodControls()}
+      ${renderAnalyticsEntryGrid(analytics)}
+      ${renderAnalyticsBreakdown(analytics)}
+      ${renderAnalyticsDetail(analytics)}
     </section>
   `;
 }
 
-function renderAnalyticsStat(label, value) {
+function renderAnalyticsPeriodControls() {
+  const presets = [
+    ["all", "Все время"],
+    ["today", "Сегодня"],
+    ["7d", "7 дней"],
+    ["30d", "30 дней"],
+    ["custom", "Период"]
+  ];
+  const hasPeriod = ui.analyticsPreset !== "all" || ui.analyticsFromInput || ui.analyticsToInput;
   return `
-    <div class="stat">
-      <b>${escapeHtml(value)}</b>
-      <span>${escapeHtml(label)}</span>
+    <div class="analytics-period-panel">
+      <div class="analytics-preset-row">
+        ${presets.map(([preset, label]) => `
+          <button
+            type="button"
+            class="analytics-preset ${ui.analyticsPreset === preset ? "active" : ""}"
+            data-action="set-analytics-preset"
+            data-analytics-preset="${escapeAttr(preset)}"
+          >
+            ${escapeHtml(label)}
+          </button>
+        `).join("")}
+      </div>
+      <div class="analytics-filter">
+        <label>
+          С
+          <input
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            data-analytics-date="from"
+            value="${escapeAttr(ui.analyticsFromInput)}"
+            placeholder="дд.мм.гггг"
+          />
+        </label>
+        <label>
+          По
+          <input
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            data-analytics-date="to"
+            value="${escapeAttr(ui.analyticsToInput)}"
+            placeholder="дд.мм.гггг"
+          />
+        </label>
+        <button type="button" class="quiet analytics-reset" data-action="reset-analytics-period" ${hasPeriod ? "" : "disabled aria-disabled=\"true\""}>
+          Сбросить
+        </button>
+      </div>
     </div>
   `;
 }
 
-function renderAnalyticsRow(row) {
+function renderAnalyticsEntryGrid(analytics) {
   return `
-    <tr>
-      <td data-label="ФИО">${escapeHtml(row.name)}</td>
-      <td data-label="Telegram">${escapeHtml(row.telegram)}</td>
-      <td data-label="Телефон">${escapeHtml(row.phone)}</td>
-      <td data-label="Собес">${escapeHtml(row.slotLabel)}</td>
-      <td data-label="Статус">${escapeHtml(row.status)}</td>
-      <td data-label="Явка">${escapeHtml(row.attendance)}</td>
-      <td data-label="Материалы">${escapeHtml(row.materials)}</td>
-    </tr>
+    <div class="analytics-entry-grid">
+      ${renderAnalyticsEntry("slots", "Собесы", analytics.metrics.slots, "Даты за выбранный период")}
+      ${renderAnalyticsEntry("candidates", "Кандидаты", analytics.metrics.candidates, "Все кандидаты в периоде")}
+      ${renderAnalyticsEntry("completed", "Дошли до 5/5", analytics.metrics.completedMaterials, "Получили все материалы")}
+    </div>
+  `;
+}
+
+function renderAnalyticsEntry(view, label, value, note) {
+  return `
+    <button
+      type="button"
+      class="analytics-entry ${ui.analyticsView === view ? "active" : ""}"
+      data-action="set-analytics-view"
+      data-analytics-view="${escapeAttr(view)}"
+    >
+      <span>${escapeHtml(label)}</span>
+      <b>${escapeHtml(value)}</b>
+      <small>${escapeHtml(note)}</small>
+    </button>
+  `;
+}
+
+function renderAnalyticsBreakdown(analytics) {
+  const rows = [
+    ["Записаны / ждут собес", analytics.metrics.bookedPending],
+    ["Пришли, материалы не все", analytics.metrics.needsMaterials],
+    ["Получили 5/5", analytics.metrics.completedMaterials],
+    ["Не пришли", analytics.metrics.noShow],
+    ["Отказ после собеса", analytics.metrics.leftAfter],
+    ["Отказались заранее", analytics.metrics.cancelled],
+    ["Не подтвердили", analytics.metrics.noConfirmation]
+  ].filter(([, value]) => value > 0);
+
+  return `
+    <section class="analytics-breakdown">
+      <div class="panel-head compact">
+        <h3>Разбор</h3>
+        <span class="pill">${analytics.metrics.losses} потерь</span>
+      </div>
+      <div class="analytics-breakdown-table">
+        ${rows.map(([label, value]) => `
+          <div class="analytics-breakdown-row">
+            <span>${escapeHtml(label)}</span>
+            <b>${escapeHtml(value)}</b>
+          </div>
+        `).join("") || '<div class="empty">Данных для разбора пока нет</div>'}
+      </div>
+    </section>
+  `;
+}
+
+function renderAnalyticsDetail(analytics) {
+  if (ui.analyticsView === "candidates") {
+    return renderAnalyticsCandidatesView("Кандидаты", analytics.rows, "Кандидаты сгруппированы по итоговому состоянию. Детали открываются по нажатию на ФИО.");
+  }
+
+  if (ui.analyticsView === "completed") {
+    const rows = analytics.rows.filter((row) => row.groupKey === "completed");
+    return renderAnalyticsCandidatesView("Дошли до 5/5", rows, "Финальный список кандидатов, которым отправлены все пять материалов.");
+  }
+
+  return renderAnalyticsSlotsView(analytics);
+}
+
+function renderAnalyticsSlotsView(analytics) {
+  const slots = analytics.slots.slice().sort(compareSlotsDesc);
+  return `
+    <section class="analytics-detail-section">
+      <div class="panel-head compact">
+        <div class="panel-title-stack">
+          <h3>Собесы</h3>
+          <span>Новые даты сверху, внутри даты кандидаты идут по статусам</span>
+        </div>
+        <span class="pill accent">${slots.length}</span>
+      </div>
+      <div class="analytics-slot-list">
+        ${slots.map((slot, index) => renderAnalyticsSlot(slot, analytics.rows, index === 0)).join("") || '<div class="empty">Собесов за период нет</div>'}
+      </div>
+    </section>
+  `;
+}
+
+function renderAnalyticsSlot(slot, allRows, open = false) {
+  const rows = allRows.filter((row) => row.slot?.id === slot.id);
+  const groups = groupedAnalyticsRows(rows, { slotOrder: true });
+  return `
+    <details class="analytics-slot-card" ${open ? "open" : ""}>
+      <summary>
+        <span class="analytics-slot-main">
+          <b>${escapeHtml(slotLabel(slot))}</b>
+          <span>${escapeHtml(slot.venueAddress || "адрес не указан")}</span>
+        </span>
+        <span class="analytics-slot-counts">
+          ${renderAnalyticsMiniCount("Всего", rows.length)}
+          ${renderAnalyticsMiniCount("5/5", rows.filter((row) => row.groupKey === "completed").length)}
+          ${renderAnalyticsMiniCount("Не пришли", rows.filter((row) => row.groupKey === "no_show").length)}
+        </span>
+      </summary>
+      <div class="analytics-group-list">
+        ${groups.map((group) => renderAnalyticsGroup(group)).join("") || '<div class="empty">Кандидатов на этой дате нет</div>'}
+      </div>
+    </details>
+  `;
+}
+
+function renderAnalyticsMiniCount(label, value) {
+  return `
+    <span class="analytics-mini-count">
+      <small>${escapeHtml(label)}</small>
+      <b>${escapeHtml(value)}</b>
+    </span>
+  `;
+}
+
+function renderAnalyticsCandidatesView(title, rows, note) {
+  const groups = groupedAnalyticsRows(rows);
+  return `
+    <section class="analytics-detail-section">
+      <div class="panel-head compact">
+        <div class="panel-title-stack">
+          <h3>${escapeHtml(title)}</h3>
+          <span>${escapeHtml(note)}</span>
+        </div>
+        <span class="pill accent">${rows.length}</span>
+      </div>
+      <div class="analytics-group-list">
+        ${groups.map((group) => renderAnalyticsGroup(group)).join("") || '<div class="empty">Кандидатов за период нет</div>'}
+      </div>
+    </section>
+  `;
+}
+
+function renderAnalyticsGroup(group) {
+  return `
+    <section class="analytics-group">
+      <div class="analytics-group-head">
+        <div>
+          <b>${escapeHtml(group.title)}</b>
+          <span>${escapeHtml(group.note)}</span>
+        </div>
+        <span class="pill ${group.tone}">${group.rows.length}</span>
+      </div>
+      <div class="analytics-person-list">
+        ${group.rows.map((row, index) => renderAnalyticsCandidateCard(row, index)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderAnalyticsCandidateCard(row, index = 0) {
+  return `
+    <details class="analytics-person-card ${row.tone}">
+      <summary>
+        <span class="analytics-person-title">
+          <span class="candidate-number">${index + 1}</span>
+          <span>
+            <b>${escapeHtml(row.name)}</b>
+            <small>${escapeHtml(row.telegram)} · ${escapeHtml(row.slotShortLabel)}</small>
+          </span>
+        </span>
+        <span class="analytics-status-chip ${row.tone}">${escapeHtml(row.finalLabel)}</span>
+      </summary>
+      <div class="analytics-person-body">
+        <div class="analytics-person-grid">
+          ${renderAnalyticsInfo("Телефон", row.phone)}
+          ${renderAnalyticsInfo("Telegram", row.telegram)}
+          ${renderAnalyticsInfo("Собес", row.slotLabel)}
+          ${renderAnalyticsInfo("Адрес", row.slot?.venueAddress || "без адреса")}
+          ${renderAnalyticsInfo("Явка", row.attendance)}
+          ${renderAnalyticsInfo("Материалы", row.materials)}
+          ${row.lastResourceAt ? renderAnalyticsInfo("Последний материал", formatDateTime(row.lastResourceAt)) : ""}
+          ${row.raw.waitlistJoinedAt ? renderAnalyticsInfo("Очередь", formatDateTime(row.raw.waitlistJoinedAt)) : ""}
+        </div>
+        ${row.telegram && row.telegram !== "без Telegram" ? `
+          <button type="button" class="queue-telegram" data-action="copy-telegram" data-copy-value="${escapeAttr(row.telegram)}">
+            ${escapeHtml(row.telegram)}
+          </button>
+        ` : ""}
+        ${renderAnalyticsCandidateHistory(row.raw)}
+      </div>
+    </details>
+  `;
+}
+
+function renderAnalyticsInfo(label, value) {
+  return `
+    <div class="analytics-info-item">
+      <span>${escapeHtml(label)}</span>
+      <b>${escapeHtml(value || "нет данных")}</b>
+    </div>
+  `;
+}
+
+function renderAnalyticsCandidateHistory(candidate) {
+  const events = analyticsCandidateEvents(candidate).slice(0, 8);
+  return `
+    <div class="analytics-history">
+      <b>История</b>
+      <div class="analytics-history-list">
+        ${events.map((event) => `
+          <div class="analytics-history-row">
+            <span>${escapeHtml(formatDateTime(event.createdAt))}</span>
+            <b>${escapeHtml(event.label)}</b>
+          </div>
+        `).join("") || '<div class="empty">Истории пока нет</div>'}
+      </div>
+    </div>
   `;
 }
 
 function analyticsData() {
-  const slots = state.slots.filter(slotInAnalyticsRange);
+  const slots = state.slots.filter(slotInAnalyticsRange).sort(compareSlotsDesc);
   const slotIds = new Set(slots.map((slot) => slot.id));
   const rows = state.candidates
     .filter((candidate) => candidateInAnalyticsRange(candidate, slotIds))
     .map(analyticsCandidateRow)
-    .sort((left, right) => String(left.sortDate).localeCompare(String(right.sortDate)) || left.name.localeCompare(right.name));
-  const lostStatuses = new Set(["no_show", "declined_before_interview", "no_confirmation", "left_after_interview", "not_interested", "rejected"]);
+    .sort(compareAnalyticsRows);
   const completedMaterials = rows.filter((row) => row.materialsDone >= row.materialsTotal && row.materialsTotal > 0).length;
 
   return {
@@ -1599,7 +1808,11 @@ function analyticsData() {
       arrived: rows.filter((row) => row.raw.attendanceStatus === "arrived").length,
       noShow: rows.filter((row) => row.raw.attendanceStatus === "no_show").length,
       leftAfter: rows.filter((row) => row.raw.status === "left_after_interview").length,
-      lost: rows.filter((row) => lostStatuses.has(row.raw.status) || ["no_show", "declined_before", "no_confirmation"].includes(row.raw.attendanceStatus)).length,
+      cancelled: rows.filter((row) => row.groupKey === "cancelled").length,
+      noConfirmation: rows.filter((row) => row.groupKey === "no_confirmation").length,
+      losses: rows.filter((row) => ["no_show", "left_after", "cancelled", "no_confirmation"].includes(row.groupKey)).length,
+      needsMaterials: rows.filter((row) => row.groupKey === "needs_materials").length,
+      bookedPending: rows.filter((row) => row.groupKey === "booked_pending").length,
       completedMaterials,
       waitlist: rows.filter((row) => row.raw.status === "waitlist").length
     }
@@ -1610,19 +1823,77 @@ function analyticsCandidateRow(candidate) {
   const slot = candidate.interviewSlotId ? state.slots.find((item) => item.id === candidate.interviewSlotId) : null;
   const materialsDone = candidate.resourceStepsSent?.length || 0;
   const materialsTotal = resourceSteps().length || 0;
+  const lastResourceAt = lastResourceSentAt(candidate);
+  const bookedAt = candidateSlotEventAt(candidate.id, slot?.id, "candidate_booked_slot") || candidate.createdAt || "";
+  const group = analyticsCandidateGroup(candidate, materialsDone, materialsTotal);
   return {
     raw: candidate,
     sortDate: slot?.date || candidate.createdAt || "",
+    slot,
     name: candidate.name || "Без ФИО",
     telegram: cleanTelegram(candidate.telegram) || "без Telegram",
     phone: candidate.phone || "без телефона",
     slotLabel: slot ? slotLabel(slot) : "без даты",
-    status: statusLabel(candidate.status),
-    attendance: journalStatusLabel(candidate),
+    slotShortLabel: slot ? `${formatDate(slot.date)} · ${slot.time}` : "без даты",
+    finalLabel: group.label,
+    groupKey: group.key,
+    tone: group.tone,
+    attendance: analyticsAttendanceLabel(candidate),
     materials: `${materialsDone}/${materialsTotal}`,
     materialsDone,
-    materialsTotal
+    materialsTotal,
+    bookedAt,
+    lastResourceAt
   };
+}
+
+function analyticsCandidateGroup(candidate, materialsDone, materialsTotal) {
+  if (materialsTotal > 0 && materialsDone >= materialsTotal) {
+    return { key: "completed", label: "5/5", tone: "ok" };
+  }
+  if (candidate.status === "left_after_interview") {
+    return { key: "left_after", label: "Отказ", tone: "bad" };
+  }
+  if (candidate.attendanceStatus === "no_show" || candidate.status === "no_show") {
+    return { key: "no_show", label: "Не пришел", tone: "bad" };
+  }
+  if (candidate.status === "no_confirmation" || candidate.attendanceStatus === "no_confirmation") {
+    return { key: "no_confirmation", label: "Не подтвердил", tone: "wait" };
+  }
+  if (["declined_before_interview", "not_interested"].includes(candidate.status) || candidate.attendanceStatus === "declined_before") {
+    return { key: "cancelled", label: "Отказ заранее", tone: "wait" };
+  }
+  if (candidate.attendanceStatus === "arrived") {
+    return { key: "needs_materials", label: "Материалы не все", tone: "ok" };
+  }
+  if (candidate.status === "waitlist") {
+    return { key: "waitlist", label: "Ожидает дату", tone: "accent" };
+  }
+  return { key: "booked_pending", label: "Ждет собес", tone: "wait" };
+}
+
+function analyticsGroups() {
+  return [
+    { key: "completed", title: "Дошли до 5/5", note: "Все материалы отправлены", tone: "ok" },
+    { key: "needs_materials", title: "Пришли, материалы не все", note: "Нужно довести отправку до 5/5", tone: "ok" },
+    { key: "booked_pending", title: "Записаны / ждут собес", note: "Дата выбрана, итог еще не закрыт", tone: "wait" },
+    { key: "no_show", title: "Не пришли", note: "Рекрут отметил неявку", tone: "bad" },
+    { key: "left_after", title: "Отказ после собеса", note: "Пришли, но сотрудничество не начали", tone: "bad" },
+    { key: "cancelled", title: "Отказались заранее", note: "Отменили запись до собеса", tone: "wait" },
+    { key: "no_confirmation", title: "Не подтвердили", note: "Не ответили на запрос выхода", tone: "wait" },
+    { key: "waitlist", title: "Ожидают дату", note: "Сейчас находятся в очереди", tone: "accent" }
+  ];
+}
+
+function groupedAnalyticsRows(rows, options = {}) {
+  return analyticsGroups()
+    .map((group) => ({
+      ...group,
+      rows: rows
+        .filter((row) => row.groupKey === group.key)
+        .sort(options.slotOrder ? compareAnalyticsRowsByBooking : compareAnalyticsRowsInsideGroup)
+    }))
+    .filter((group) => group.rows.length > 0);
 }
 
 function slotInAnalyticsRange(slot) {
@@ -1649,40 +1920,211 @@ function analyticsPeriodLabel() {
   return `${from} - ${to}`;
 }
 
-function analyticsMetricLabel(value) {
-  const labels = {
-    booked: "Записались",
-    arrived: "Пришли",
-    lost: "Потеряны",
-    completed: "Получили все материалы"
-  };
-  return labels[value] || value;
-}
-
-function downloadAnalyticsXlsx() {
+async function downloadAnalyticsXlsx() {
   const analytics = analyticsData();
   const rows = [
     ["Период", analytics.periodLabel],
     ["Собесов", analytics.metrics.slots],
     ["Кандидатов", analytics.metrics.candidates],
     ["Пришли", analytics.metrics.arrived],
-    ["Потеряны", analytics.metrics.lost],
+    ["Потеряны", analytics.metrics.losses],
     ["Получили 5/5", analytics.metrics.completedMaterials],
     ["Отказ после собеса", analytics.metrics.leftAfter],
     ["Не пришли", analytics.metrics.noShow],
     [],
-    ["ФИО", "Telegram", "Телефон", "Собес", "Статус", "Явка", "Материалы"],
-    ...analytics.rows.map((row) => [row.name, row.telegram, row.phone, row.slotLabel, row.status, row.attendance, row.materials])
+    ["Разбор"],
+    ["Записаны / ждут собес", analytics.metrics.bookedPending],
+    ["Пришли, материалы не все", analytics.metrics.needsMaterials],
+    ["Отказались заранее", analytics.metrics.cancelled],
+    ["Не подтвердили", analytics.metrics.noConfirmation],
+    [],
+    ["Собесы"],
+    ["Дата", "Адрес", "Кандидатов", "Получили 5/5", "Не пришли", "Отказ после собеса"],
+    ...analytics.slots.map((slot) => {
+      const slotRows = analytics.rows.filter((row) => row.slot?.id === slot.id);
+      return [
+        slotLabel(slot),
+        slot.venueAddress || "",
+        slotRows.length,
+        slotRows.filter((row) => row.groupKey === "completed").length,
+        slotRows.filter((row) => row.groupKey === "no_show").length,
+        slotRows.filter((row) => row.groupKey === "left_after").length
+      ];
+    }),
+    [],
+    ["Кандидаты"],
+    ["ФИО", "Telegram", "Телефон", "Собес", "Итог", "Явка", "Материалы", "Последний материал"],
+    ...analytics.rows.map((row) => [row.name, row.telegram, row.phone, row.slotLabel, row.finalLabel, row.attendance, row.materials, row.lastResourceAt ? formatDateTime(row.lastResourceAt) : ""])
   ];
   const blob = createXlsxBlob(rows);
+  const fileName = `sobes-analytics-${ui.analyticsFrom || "start"}-${ui.analyticsTo || "today"}.xlsx`;
+
+  if (typeof File !== "undefined" && navigator.share && navigator.canShare) {
+    const file = new File([blob], fileName, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "Аналитика собеседований LOFT HALL" });
+        return "share";
+      } catch (error) {
+        if (error?.name === "AbortError") return "share";
+      }
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `sobes-analytics-${ui.analyticsFrom || "start"}-${ui.analyticsTo || "today"}.xlsx`;
+  link.download = fileName;
   document.body.append(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  return "download";
+}
+
+function setAnalyticsPreset(preset) {
+  ui.analyticsPreset = preset;
+  if (preset === "all") {
+    ui.analyticsFrom = "";
+    ui.analyticsTo = "";
+  } else if (preset === "today") {
+    const today = localIsoDate();
+    ui.analyticsFrom = today;
+    ui.analyticsTo = today;
+  } else if (preset === "7d") {
+    const today = localIsoDate();
+    ui.analyticsFrom = addDaysIso(today, -6);
+    ui.analyticsTo = today;
+  } else if (preset === "30d") {
+    const today = localIsoDate();
+    ui.analyticsFrom = addDaysIso(today, -29);
+    ui.analyticsTo = today;
+  } else {
+    ui.analyticsFrom = parseRuDateInput(ui.analyticsFromInput);
+    ui.analyticsTo = parseRuDateInput(ui.analyticsToInput);
+  }
+
+  if (preset !== "custom") {
+    ui.analyticsFromInput = ui.analyticsFrom ? isoDateToRuInput(ui.analyticsFrom) : "";
+    ui.analyticsToInput = ui.analyticsTo ? isoDateToRuInput(ui.analyticsTo) : "";
+  }
+}
+
+function parseRuDateInput(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text) && isRealIsoDate(text)) return text;
+
+  const digits = text.replace(/\D/g, "");
+  if (digits.length !== 8) return "";
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+  const iso = `${year}-${month}-${day}`;
+  return isRealIsoDate(iso) ? iso : "";
+}
+
+function isRealIsoDate(value) {
+  const [year, month, day] = String(value || "").split("-").map(Number);
+  const date = new Date(`${value}T12:00:00`);
+  return (
+    Number.isInteger(year) &&
+    Number.isInteger(month) &&
+    Number.isInteger(day) &&
+    date.getFullYear() === year &&
+    date.getMonth() + 1 === month &&
+    date.getDate() === day
+  );
+}
+
+function isoDateToRuInput(value) {
+  const [year, month, day] = String(value || "").split("-");
+  return year && month && day ? `${day}.${month}.${year}` : "";
+}
+
+function localIsoDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysIso(iso, days) {
+  const date = new Date(`${iso}T12:00:00`);
+  date.setDate(date.getDate() + Number(days || 0));
+  return localIsoDate(date);
+}
+
+function compareSlotsDesc(left, right) {
+  const leftKey = `${left.date || ""}T${left.time || "00:00"}`;
+  const rightKey = `${right.date || ""}T${right.time || "00:00"}`;
+  return rightKey.localeCompare(leftKey) || String(right.id).localeCompare(String(left.id));
+}
+
+function compareAnalyticsRows(left, right) {
+  const leftGroup = analyticsGroups().findIndex((group) => group.key === left.groupKey);
+  const rightGroup = analyticsGroups().findIndex((group) => group.key === right.groupKey);
+  if (leftGroup !== rightGroup) return leftGroup - rightGroup;
+  return compareAnalyticsRowsInsideGroup(left, right);
+}
+
+function compareAnalyticsRowsInsideGroup(left, right) {
+  if (left.groupKey === "completed") {
+    return String(right.lastResourceAt || right.raw.updatedAt || "").localeCompare(String(left.lastResourceAt || left.raw.updatedAt || "")) || left.name.localeCompare(right.name);
+  }
+  if (["no_show", "left_after", "cancelled"].includes(left.groupKey)) {
+    return String(right.raw.updatedAt || "").localeCompare(String(left.raw.updatedAt || "")) || left.name.localeCompare(right.name);
+  }
+  return compareAnalyticsRowsByBooking(left, right);
+}
+
+function compareAnalyticsRowsByBooking(left, right) {
+  return String(left.bookedAt || left.raw.createdAt || "").localeCompare(String(right.bookedAt || right.raw.createdAt || "")) || left.name.localeCompare(right.name);
+}
+
+function lastResourceSentAt(candidate) {
+  return (candidate.resourceStepsSent || [])
+    .map((step) => step.sentAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+}
+
+function candidateSlotEventAt(candidateId, slotId, type) {
+  return (state.events || [])
+    .filter((event) => event.candidateId === candidateId && (!slotId || event.slotId === slotId) && (!type || event.type === type))
+    .map((event) => event.createdAt)
+    .filter(Boolean)
+    .sort()[0] || "";
+}
+
+function analyticsAttendanceLabel(candidate) {
+  if (candidate.status === "left_after_interview") return "Пришел, отказ после собеса";
+  if (candidate.attendanceStatus === "arrived") return "Пришел";
+  if (candidate.attendanceStatus === "no_show") return "Не пришел";
+  if (candidate.attendanceStatus === "declined_before") return "Отказался заранее";
+  if (candidate.attendanceStatus === "no_confirmation") return "Не подтвердил";
+  if (candidate.confirmationStatus === "confirmed") return "Подтвердил, ждем собес";
+  if (candidate.confirmationStatus === "pending") return "Запрос отправлен";
+  return "Не отмечен";
+}
+
+function analyticsCandidateEvents(candidate) {
+  const events = (state.events || [])
+    .filter((event) => event.candidateId === candidate.id)
+    .map((event) => ({
+      createdAt: event.createdAt,
+      label: eventTypeLabel(event.type)
+    }));
+  const history = (candidate.interviewHistory || []).map((item) => ({
+    createdAt: item.recordedAt || item.date || candidate.createdAt,
+    label: historyOutcomeLabel(item)
+  }));
+  return [...events, ...history]
+    .filter((event) => event.createdAt)
+    .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
 }
 
 function createXlsxBlob(rows) {
@@ -2482,7 +2924,7 @@ function showToast(message) {
 }
 
 function escapeHtml(value) {
-  return String(value || "")
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -2491,7 +2933,7 @@ function escapeHtml(value) {
 }
 
 function escapeXml(value) {
-  return String(value || "")
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");

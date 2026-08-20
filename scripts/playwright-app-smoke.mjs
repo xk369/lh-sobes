@@ -75,6 +75,15 @@ try {
   await page.locator(".recruiter-grid").waitFor({ timeout: 10000 });
   await page.getByRole("button", { name: "Аналитика", exact: true }).click();
   await page.locator(".analytics-panel").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "7 дней", exact: true }).click();
+  await page.getByRole("button", { name: "Сбросить", exact: true }).click();
+  assert.equal(await page.locator("[data-analytics-date='from']").inputValue(), "", "analytics reset should clear period start");
+  assert.equal(await page.locator("[data-analytics-date='to']").inputValue(), "", "analytics reset should clear period end");
+  await page.getByRole("button", { name: /Кандидаты/ }).click();
+  await page.locator(".analytics-group").first().waitFor({ timeout: 10000 });
+  await assertNoViewportOverflow(page, "recruiter analytics candidates");
+  await page.getByRole("button", { name: /Дошли до 5\/5/ }).click();
+  await assertNoViewportOverflow(page, "recruiter analytics completed");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Скачать XLSX", exact: true }).click();
   const download = await downloadPromise;
@@ -82,6 +91,7 @@ try {
   await download.saveAs(path.join(tmpDir, "sobes-analytics-smoke.xlsx"));
   assert.equal(await download.failure(), null);
   await assertNoViewportOverflow(page, "recruiter analytics");
+  await page.screenshot({ path: path.join(tmpDir, "app-analytics-mobile.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Даты", exact: true }).click();
   await page.locator("#slot-form").waitFor({ timeout: 10000 });
