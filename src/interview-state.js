@@ -822,7 +822,7 @@ export function applyInterviewCommand(input, command, options = {}) {
   return { state: deriveState(state), result };
 }
 
-function defaultSettings() {
+export function defaultSettings() {
   return {
     autoMaterialDelayMinutes: 5,
     developerTelegramIds: DEVELOPER_TELEGRAM_IDS,
@@ -1274,6 +1274,7 @@ function slotMapUrl(slot = {}) {
 function createCandidate(payload, now) {
   return normalizeCandidate({
     id: payload.id,
+    legacyId: payload.legacyId,
     telegramId: clean(payload.telegramId),
     telegram: clean(payload.telegram),
     name: clean(payload.name),
@@ -1307,6 +1308,7 @@ function createCandidate(payload, now) {
 function normalizeCandidate(candidate) {
   return {
     id: candidate.id,
+    legacyId: clean(candidate.legacyId),
     telegramId: clean(candidate.telegramId),
     telegram: clean(candidate.telegram),
     name: clean(candidate.name),

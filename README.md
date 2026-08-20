@@ -1,6 +1,8 @@
 # LOFT HALL Interviews MVP
 
-Отдельный MVP для записи на собеседования LOFT HALL. Проект не использует продовую базу и не меняет текущий центр стажировок: состояние сохраняется локально в `data/interviews.json`, а при первом запуске файл создается автоматически.
+Мини-приложение для записи на собеседования LOFT HALL. Локально может работать
+на JSON-файле, а в production подключается к общей PostgreSQL-базе центра
+стажировок через `INTERVIEW_STORAGE_MODE=postgres`.
 
 ## Что покрыто
 
@@ -16,7 +18,7 @@
 - поиск по ФИО, Telegram, Telegram ID и телефону;
 - кабинет рекрута только для разрешенных Telegram ID;
 - аналитика за период и выгрузка XLSX;
-- локальный API для будущей замены JSON на PostgreSQL.
+- PostgreSQL runtime для общей цепочки `собес -> кандидат -> стажировка`.
 
 ## Запуск
 
@@ -36,6 +38,12 @@ HOST=127.0.0.1 PORT=3210 npm start
 
 ```bash
 HOST=0.0.0.0 PORT=3210 npm start
+```
+
+Для production-режима с общей базой:
+
+```bash
+INTERVIEW_STORAGE_MODE=postgres DATABASE_URL=postgres://... npm start
 ```
 
 ## Проверка
@@ -66,4 +74,8 @@ Compose запускает сервис `lh-sobes` и публикует его 
 
 ## Данные
 
-Рабочий файл `data/interviews.json` не коммитится. Его можно удалить для сброса локального состояния, после чего приложение создаст демо-данные заново.
+В JSON-режиме рабочий файл `data/interviews.json` не коммитится. В
+PostgreSQL-режиме источником правды становятся таблицы `candidate_profiles`,
+`interview_slots`, `interview_participants`, `candidate_resource_deliveries`,
+`candidate_link_clicks`, `candidate_events` и связанные interview-поля в
+`notifications`.

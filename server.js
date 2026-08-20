@@ -5,6 +5,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyInterviewCommand, createSeedState, deriveState } from "./src/interview-state.js";
+import { createPostgresInterviewStorage } from "./src/interview-postgres-storage.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,8 +14,9 @@ const HOST = process.env.HOST || "127.0.0.1";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DATA_FILE = process.env.DATA_FILE || path.join(DATA_DIR, "interviews.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
+const INTERVIEW_STORAGE_MODE = String(process.env.INTERVIEW_STORAGE_MODE || process.env.SOBES_STORAGE_MODE || "json").trim().toLowerCase();
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
-const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || process.env.APP_URL || "https://sobes.151.244.243.164.sslip.io";
+const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || process.env.APP_URL || `http://${HOST}:${PORT}`;
 const TELEGRAM_ACTION_SECRET = process.env.TELEGRAM_ACTION_SECRET || TELEGRAM_BOT_TOKEN || "lh-sobes-local";
 const CONFIRMATION_SEND_HOUR_MOSCOW = 21;
 const CONFIRMATION_SCHEDULER_INTERVAL_MS = Number(process.env.CONFIRMATION_SCHEDULER_INTERVAL_MS || 60_000);
@@ -52,6 +54,10 @@ const CANDIDATE_OWN_COMMANDS = new Set([
   "waitlist_slot_response"
 ]);
 
+const postgresStorage = INTERVIEW_STORAGE_MODE === "postgres"
+  ? createPostgresInterviewStorage(process.env)
+  : null;
+
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
@@ -78,7 +84,13 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/health") {
-      sendJson(res, { ok: true, service: "loft-hall-interviews-mvp", updatedAt: new Date().toISOString() });
+      sendJson(res, {
+        ok: true,
+        service: "loft-hall-interviews-mvp",
+        interviewStorageMode: INTERVIEW_STORAGE_MODE,
+        interviewStorageWritable: true,
+        updatedAt: new Date().toISOString()
+      });
       return;
     }
 
@@ -89,16 +101,21 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/command") {
       const command = await readJson(req);
-      const state = await loadState();
-      if (RECRUITER_COMMANDS.has(command.action)) {
-        assertRecruiterRequest(req, state);
-      } else if (CANDIDATE_OWN_COMMANDS.has(command.action)) {
-        assertCandidateRequest(req, state, candidateIdFromCommand(command));
-      }
-      const next = applyInterviewCommand(state, command);
-      const deliveredState = await deliverPendingNotifications(next.state);
-      await saveState(deliveredState);
-      sendJson(res, { ok: true, state: stateForRequest(req, deliveredState, next.result), result: next.result });
+      const mutation = await mutateState(async (state, tools) => {
+        const resolvedCommand = resolveCommandReferences(command, state);
+        if (RECRUITER_COMMANDS.has(resolvedCommand.action)) {
+          assertRecruiterRequest(req, state);
+        } else if (CANDIDATE_OWN_COMMANDS.has(resolvedCommand.action)) {
+          assertCandidateRequest(req, state, candidateIdFromCommand(resolvedCommand));
+        }
+        const next = applyInterviewCommand(state, resolvedCommand);
+        const prepared = tools.prepareStateIds
+          ? await tools.prepareStateIds(next.state, next.result)
+          : next;
+        const deliveredState = await deliverPendingNotifications(prepared.state);
+        return { state: deliveredState, result: prepared.result };
+      });
+      sendJson(res, { ok: true, state: stateForRequest(req, mutation.state, mutation.result), result: mutation.result });
       return;
     }
 
@@ -111,9 +128,13 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/reset") {
       assertRecruiterRequest(req, await loadState());
-      const state = createSeedState(new Date().toISOString());
-      await saveState(state);
-      sendJson(res, { ok: true, state });
+      const mutation = await mutateState(async (_state, tools) => {
+        const seed = createSeedState(new Date().toISOString());
+        return tools.prepareStateIds
+          ? await tools.prepareStateIds(seed, {})
+          : { state: seed, result: {} };
+      });
+      sendJson(res, { ok: true, state: mutation.state });
       return;
     }
 
@@ -148,6 +169,10 @@ server.on("error", (error) => {
 });
 
 async function ensureDataFile() {
+  if (postgresStorage) {
+    await postgresStorage.ensure();
+    return;
+  }
   await mkdir(DATA_DIR, { recursive: true });
   if (!existsSync(DATA_FILE)) {
     await saveState(createSeedState(new Date().toISOString()));
@@ -155,12 +180,24 @@ async function ensureDataFile() {
 }
 
 async function loadState() {
+  if (postgresStorage) return postgresStorage.loadState();
   const raw = await readFile(DATA_FILE, "utf8");
   return deriveState(JSON.parse(raw));
 }
 
 async function saveState(state) {
+  if (postgresStorage) {
+    throw new Error("Direct saveState is disabled in PostgreSQL mode; use mutateState.");
+  }
   await writeFile(DATA_FILE, `${JSON.stringify(deriveState(state), null, 2)}\n`, "utf8");
+}
+
+async function mutateState(mutator) {
+  if (postgresStorage) return postgresStorage.mutateState(mutator);
+  const state = await loadState();
+  const mutation = await mutator(state, {});
+  await writeFile(DATA_FILE, `${JSON.stringify(deriveState(mutation.state), null, 2)}\n`, "utf8");
+  return { ...mutation, state: deriveState(mutation.state) };
 }
 
 function assertRecruiterRequest(req, state) {
@@ -244,6 +281,36 @@ function visibleCandidateForRequest(req, state, resultCandidateId = "") {
 function candidateIdFromCommand(command = {}) {
   const payload = command.payload || {};
   return clean(payload.candidateId || payload.id || payload.candidate?.candidateId || payload.candidate?.id);
+}
+
+function resolveCommandReferences(command = {}, state) {
+  const next = structuredClone(command);
+  const payload = next.payload || {};
+  next.payload = payload;
+
+  rewritePayloadReference(payload, "slotId", state.slots, "legacyId");
+  rewritePayloadReference(payload, "candidateId", state.candidates, "legacyId");
+
+  if (next.action === "create_slot") {
+    rewritePayloadReference(payload, "id", state.slots, "legacyId");
+  } else {
+    rewritePayloadReference(payload, "id", state.candidates, "legacyId");
+  }
+
+  if (payload.candidate && typeof payload.candidate === "object") {
+    rewritePayloadReference(payload.candidate, "candidateId", state.candidates, "legacyId");
+    rewritePayloadReference(payload.candidate, "id", state.candidates, "legacyId");
+    rewritePayloadReference(payload.candidate, "slotId", state.slots, "legacyId");
+  }
+
+  return next;
+}
+
+function rewritePayloadReference(payload, field, records, legacyField) {
+  const raw = clean(payload?.[field]);
+  if (!raw) return;
+  const match = records.find((item) => item.id === raw || item[legacyField] === raw);
+  if (match) payload[field] = match.id;
 }
 
 function clean(value) {
@@ -375,15 +442,20 @@ async function handleTelegramActionUrl(url, res) {
     return;
   }
 
-  const state = await loadState();
-  const next = applyInterviewCommand(state, {
-    action: "candidate_confirm",
-    actor: "telegram_link",
-    payload: { candidateId, decision, actor: "telegram_link" }
+  const next = await mutateState(async (state, tools) => {
+    const resolvedCommand = resolveCommandReferences({
+      action: "candidate_confirm",
+      actor: "telegram_link",
+      payload: { candidateId, decision, actor: "telegram_link" }
+    }, state);
+    const applied = applyInterviewCommand(state, resolvedCommand);
+    const prepared = tools.prepareStateIds
+      ? await tools.prepareStateIds(applied.state, applied.result)
+      : applied;
+    const deliveredState = await deliverPendingNotifications(prepared.state);
+    await clearLatestTelegramKeyboard(deliveredState, prepared.result.candidateId || candidateId, "confirmation_request");
+    return { state: deliveredState, result: prepared.result };
   });
-  const deliveredState = await deliverPendingNotifications(next.state);
-  await clearLatestTelegramKeyboard(deliveredState, candidateId, "confirmation_request");
-  await saveState(deliveredState);
 
   const savedDecision = next.result.decision || decision;
   sendTelegramActionPage(
@@ -403,15 +475,25 @@ async function handleTelegramWaitlistActionUrl(url, res, candidateId, signature)
     return;
   }
 
-  const state = await loadState();
-  const next = applyInterviewCommand(state, {
-    action: "waitlist_slot_response",
-    actor: "telegram_link",
-    payload: { candidateId, slotId, intent, actor: "telegram_link" }
+  const next = await mutateState(async (state, tools) => {
+    const resolvedCommand = resolveCommandReferences({
+      action: "waitlist_slot_response",
+      actor: "telegram_link",
+      payload: { candidateId, slotId, intent, actor: "telegram_link" }
+    }, state);
+    const applied = applyInterviewCommand(state, resolvedCommand);
+    const prepared = tools.prepareStateIds
+      ? await tools.prepareStateIds(applied.state, applied.result)
+      : applied;
+    const deliveredState = await deliverPendingNotifications(prepared.state);
+    await clearLatestTelegramKeyboard(
+      deliveredState,
+      prepared.result.candidateId || candidateId,
+      "waitlist_new_slot",
+      prepared.result.slotId || slotId
+    );
+    return { state: deliveredState, result: prepared.result };
   });
-  const deliveredState = await deliverPendingNotifications(next.state);
-  await clearLatestTelegramKeyboard(deliveredState, candidateId, "waitlist_new_slot", slotId);
-  await saveState(deliveredState);
 
   sendTelegramActionPage(
     res,
@@ -433,16 +515,26 @@ async function handleTelegramUpdate(update) {
   if (scope === "waitlist" && ["book", "stay"].includes(action) && firstId && secondId) {
     const slotId = firstId;
     const candidateId = secondId;
-    const state = await loadState();
-    const next = applyInterviewCommand(state, {
-      action: "waitlist_slot_response",
-      actor: "telegram",
-      payload: { candidateId, slotId, intent: action, actor: "telegram" }
+    const next = await mutateState(async (state, tools) => {
+      const resolvedCommand = resolveCommandReferences({
+        action: "waitlist_slot_response",
+        actor: "telegram",
+        payload: { candidateId, slotId, intent: action, actor: "telegram" }
+      }, state);
+      const applied = applyInterviewCommand(state, resolvedCommand);
+      const prepared = tools.prepareStateIds
+        ? await tools.prepareStateIds(applied.state, applied.result)
+        : applied;
+      const deliveredState = await deliverPendingNotifications(prepared.state);
+      await clearCallbackMessageKeyboard(callback);
+      await clearLatestTelegramKeyboard(
+        deliveredState,
+        prepared.result.candidateId || candidateId,
+        "waitlist_new_slot",
+        prepared.result.slotId || slotId
+      );
+      return { state: deliveredState, result: prepared.result };
     });
-    const deliveredState = await deliverPendingNotifications(next.state);
-    await clearCallbackMessageKeyboard(callback);
-    await clearLatestTelegramKeyboard(deliveredState, candidateId, "waitlist_new_slot", slotId);
-    await saveState(deliveredState);
     await answerTelegramCallback(
       callback.id,
       next.result.alreadyHandled ? "Действие уже было обработано" : action === "book" ? "Запись сохранена" : "Вы остаетесь в очереди"
@@ -457,16 +549,21 @@ async function handleTelegramUpdate(update) {
     return;
   }
 
-  const state = await loadState();
-  const next = applyInterviewCommand(state, {
-    action: "candidate_confirm",
-    actor: "candidate",
-    payload: { candidateId, decision, actor: "telegram" }
+  const next = await mutateState(async (state, tools) => {
+    const resolvedCommand = resolveCommandReferences({
+      action: "candidate_confirm",
+      actor: "candidate",
+      payload: { candidateId, decision, actor: "telegram" }
+    }, state);
+    const applied = applyInterviewCommand(state, resolvedCommand);
+    const prepared = tools.prepareStateIds
+      ? await tools.prepareStateIds(applied.state, applied.result)
+      : applied;
+    const deliveredState = await deliverPendingNotifications(prepared.state);
+    await clearCallbackMessageKeyboard(callback);
+    await clearLatestTelegramKeyboard(deliveredState, prepared.result.candidateId || candidateId, "confirmation_request");
+    return { state: deliveredState, result: prepared.result };
   });
-  const deliveredState = await deliverPendingNotifications(next.state);
-  await clearCallbackMessageKeyboard(callback);
-  await clearLatestTelegramKeyboard(deliveredState, candidateId, "confirmation_request");
-  await saveState(deliveredState);
   await answerTelegramCallback(
     callback.id,
     next.result.alreadyAnswered ? "Ответ уже был сохранен" : decision === "yes" ? "Участие подтверждено" : "Отказ сохранен"
@@ -614,20 +711,28 @@ async function runScheduledConfirmations(nowDate = new Date()) {
   if (nowMoscow.hour < CONFIRMATION_SEND_HOUR_MOSCOW) return;
   const dueDate = addDaysToMoscowDate(nowMoscow.date, 1);
 
-  const state = await loadState();
-  const next = applyInterviewCommand(
-    state,
-    {
-      action: "send_due_confirmations",
-      actor: "system",
-      payload: { dueDate, actor: "system" }
-    },
-    { now: nowDate.toISOString() }
-  );
+  const next = await mutateState(async (state, tools) => {
+    const resolvedCommand = resolveCommandReferences(
+      {
+        action: "send_due_confirmations",
+        actor: "system",
+        payload: { dueDate, actor: "system" }
+      },
+      state
+    );
+    const applied = applyInterviewCommand(
+      state,
+      resolvedCommand,
+      { now: nowDate.toISOString() }
+    );
+    const prepared = tools.prepareStateIds
+      ? await tools.prepareStateIds(applied.state, applied.result)
+      : applied;
+    if (!prepared.result.requestedCount) return prepared;
+    const deliveredState = await deliverPendingNotifications(prepared.state);
+    return { state: deliveredState, result: prepared.result };
+  });
   if (!next.result.requestedCount) return;
-
-  const deliveredState = await deliverPendingNotifications(next.state);
-  await saveState(deliveredState);
   console.log(`confirmation scheduler sent ${next.result.requestedCount} reminders for ${dueDate}`);
 }
 

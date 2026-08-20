@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const PUBLIC_APP_URL = process.env.PLAYWRIGHT_PUBLIC_URL || "https://sobes.151.244.243.164.sslip.io";
+const PUBLIC_APP_URL = process.env.PLAYWRIGHT_PUBLIC_URL || "http://127.0.0.1:3210";
 const tmpDir = path.join(os.tmpdir(), "lh-sobes-playwright");
 
 const checks = [];

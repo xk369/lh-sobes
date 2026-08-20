@@ -7,9 +7,21 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       NODE_ENV: production
+      INTERVIEW_STORAGE_MODE: ${INTERVIEW_STORAGE_MODE:-json}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_SSL_MODE: ${POSTGRES_SSL_MODE:-disable}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       SELF_EMPLOYMENT_BUTTON_URL: ${SELF_EMPLOYMENT_BUTTON_URL:-}
     ports:
       - "127.0.0.1:3700:3000"
     volumes:
       - ./data:/app/data
+    networks:
+      - default
+      - loft-hall-internship-unified
+
+networks:
+  loft-hall-internship-unified:
+    external: true
+    name: loft-hall-internship-unified_default
