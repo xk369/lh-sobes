@@ -680,6 +680,7 @@ function uniqueOpenCandidateSlots(candidate = null) {
   const seen = new Set();
   return state.slots
     .filter((slot) => slot.status === "open" && slot.availableSeats > 0)
+    .sort(compareSlotsAsc)
     .filter((slot) => !candidate?.interviewSlotId || slot.id !== candidate.interviewSlotId)
     .filter((slot) => {
       const key = [slot.date, slot.time, slot.venueId || slot.venue].map((value) => String(value || "").trim().toLowerCase()).join("|");
@@ -895,7 +896,7 @@ function renderRecruiterTab() {
 }
 
 function renderJournalTab() {
-  const slotCandidates = state.candidates.filter((candidate) => candidate.interviewSlotId === ui.selectedSlotId);
+  const slotCandidates = candidatesForSlot(ui.selectedSlotId).sort(compareJournalCandidates);
   const candidates = filterCandidates(slotCandidates);
   const slot = state.slots.find((item) => item.id === ui.selectedSlotId);
   const confirmation = slotConfirmationState(ui.selectedSlotId);
@@ -999,7 +1000,7 @@ function waitlistNotifiedForSlot(slotId) {
 }
 
 function activeSlots() {
-  return state.slots.filter((slot) => slot.status !== "completed");
+  return state.slots.filter((slot) => slot.status !== "completed").sort(compareSlotsAsc);
 }
 
 function visibleActiveSlots() {
@@ -1020,7 +1021,7 @@ function collapseEmptyDuplicateSlots(slots) {
 }
 
 function archivedSlots() {
-  return state.slots.filter((slot) => slot.status === "completed");
+  return state.slots.filter((slot) => slot.status === "completed").sort(compareArchivedSlots);
 }
 
 function firstActiveSlot() {
@@ -1437,7 +1438,7 @@ function renderRecruiterSlot(slot) {
 }
 
 function renderRegistrationTab() {
-  const slotCandidates = state.candidates.filter((candidate) => !ui.selectedSlotId || candidate.interviewSlotId === ui.selectedSlotId);
+  const slotCandidates = (!ui.selectedSlotId ? state.candidates : candidatesForSlot(ui.selectedSlotId)).sort(compareJournalCandidates);
   const candidates = filterCandidates(
     slotCandidates.filter(
       (candidate) =>
@@ -2149,6 +2150,50 @@ function compareSlotsDesc(left, right) {
   return rightKey.localeCompare(leftKey) || String(right.id).localeCompare(String(left.id));
 }
 
+function compareSlotsAsc(left, right) {
+  return slotDateTimeKey(left).localeCompare(slotDateTimeKey(right)) ||
+    String(left.createdAt || "").localeCompare(String(right.createdAt || "")) ||
+    String(left.id).localeCompare(String(right.id));
+}
+
+function compareArchivedSlots(left, right) {
+  const leftKey = left.completedAt || slotDateTimeKey(left);
+  const rightKey = right.completedAt || slotDateTimeKey(right);
+  return String(rightKey).localeCompare(String(leftKey)) || String(right.id).localeCompare(String(left.id));
+}
+
+function slotDateTimeKey(slot = {}) {
+  return `${slot.date || "9999-12-31"}T${slot.time || "23:59"}`;
+}
+
+function compareJournalCandidates(left, right) {
+  return candidateBookingSortTime(left).localeCompare(candidateBookingSortTime(right)) ||
+    String(left.name || "").localeCompare(String(right.name || "")) ||
+    String(left.id).localeCompare(String(right.id));
+}
+
+function compareArchiveCandidates(left, right) {
+  const leftPriority = archiveCandidatePriority(left);
+  const rightPriority = archiveCandidatePriority(right);
+  if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+  return compareJournalCandidates(left, right);
+}
+
+function archiveCandidatePriority(candidate) {
+  if (isArrivedCandidate(candidate) && candidate.status !== "left_after_interview") return 0;
+  if (isPostInterviewRefusal(candidate)) return 1;
+  if (isMissedCandidate(candidate)) return 2;
+  if (candidate.status === "declined_before_interview" || candidate.status === "no_confirmation") return 3;
+  return 4;
+}
+
+function candidateBookingSortTime(candidate) {
+  return candidateSlotEventAt(candidate.id, candidate.interviewSlotId, "candidate_booked_slot") ||
+    candidate.createdAt ||
+    candidate.updatedAt ||
+    "";
+}
+
 function compareAnalyticsRows(left, right) {
   const leftGroup = analyticsGroups().findIndex((group) => group.key === left.groupKey);
   const rightGroup = analyticsGroups().findIndex((group) => group.key === right.groupKey);
@@ -2380,7 +2425,7 @@ function filterArchivedSlots(slots) {
 }
 
 function archiveCandidatesForSlot(slot) {
-  return state.candidates.filter((candidate) => candidate.interviewSlotId === slot.id);
+  return candidatesForSlot(slot.id).sort(compareArchiveCandidates);
 }
 
 function candidateMatchesQuery(candidate, query) {

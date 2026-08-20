@@ -397,6 +397,76 @@ test("due confirmation request is filtered by interview date and sent once", () 
   );
 });
 
+test("declined confirmation clears actions, frees seat, and locks later answers", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+  const slotBeforeBooking = state.slots.find((item) => item.id === "slot-002");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "book_slot",
+      payload: {
+        slotId: "slot-002",
+        candidate: {
+          telegramId: "555555558",
+          telegram: "@decline_candidate",
+          name: "Кандидат Отказ",
+          phone: "+7 900 555-55-58",
+          source: "Telegram"
+        }
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  ));
+
+  const candidate = state.candidates.find((item) => item.telegramId === "555555558");
+  assert.equal(state.slots.find((item) => item.id === "slot-002").availableSeats, slotBeforeBooking.availableSeats - 1);
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "request_confirmation", payload: { candidateId: candidate.id } },
+    { now: "2026-08-15T18:00:00.000Z" }
+  ));
+
+  const request = state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "confirmation_request"
+  );
+  assert.equal(request.actions.length, 2);
+
+  ({ state } = applyInterviewCommand(
+    state,
+    { action: "candidate_confirm", payload: { candidateId: candidate.id, decision: "no" } },
+    { now: "2026-08-15T18:02:00.000Z" }
+  ));
+
+  const declined = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(declined.status, "declined_before_interview");
+  assert.equal(declined.confirmationStatus, "declined");
+  assert.equal(declined.attendanceStatus, "declined_before");
+  assert.notEqual(declined.status, "waitlist");
+  assert.equal(state.slots.find((item) => item.id === "slot-002").availableSeats, slotBeforeBooking.availableSeats);
+  assert.equal(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "confirmation_request").actions.length,
+    0
+  );
+  assert.ok(
+    state.notifications.find((item) => item.candidateId === candidate.id && item.type === "confirmation_request").keyboardClearedAt
+  );
+
+  const repeated = applyInterviewCommand(
+    state,
+    { action: "candidate_confirm", payload: { candidateId: candidate.id, decision: "yes" } },
+    { now: "2026-08-15T18:03:00.000Z" }
+  );
+  state = repeated.state;
+  const stillDeclined = state.candidates.find((item) => item.id === candidate.id);
+  assert.equal(repeated.result.alreadyAnswered, true);
+  assert.equal(repeated.result.decision, "no");
+  assert.equal(stillDeclined.status, "declined_before_interview");
+  assert.equal(stillDeclined.confirmationStatus, "declined");
+  assert.equal(state.slots.find((item) => item.id === "slot-002").availableSeats, slotBeforeBooking.availableSeats);
+});
+
 test("candidate telegram is required for shared candidate records", () => {
   const state = createSeedState("2026-08-10T09:00:00.000Z");
 
