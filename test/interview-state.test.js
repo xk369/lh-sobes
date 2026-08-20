@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyInterviewCommand, createSeedState, deriveState } from "../src/interview-state.js";
 
+const RECRUITER_TELEGRAM_IDS = [
+  "1294774551",
+  "6774493976",
+  "1711587497",
+  "5950662713",
+  "829555528",
+  "1223141252",
+  "342064797",
+  "985283520"
+];
+
 test("new interview date automatically notifies waitlist candidates", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
 
@@ -118,7 +129,7 @@ test("legacy auto booking messages migrate to empty booking text", () => {
   assert.equal(legacyNotification.title, "");
   assert.equal(legacyNotification.message, "");
   assert.equal(derived.notifications.find((item) => item.type === "resource_registration_bot").title, "");
-  assert.deepEqual(derived.settings.developerTelegramIds, ["1294774551"]);
+  assert.deepEqual(derived.settings.developerTelegramIds, RECRUITER_TELEGRAM_IDS);
 });
 
 test("candidate can confirm, miss interview, and return to waitlist", () => {
@@ -711,7 +722,7 @@ test("arrived candidate receives resources without interview result buttons", ()
     {
       label: "💳 Самозанятость и выплаты",
       callbackData: "",
-      url: "https://t.me/LOFT_HELPER_V2_BOT?start=samozanyatost"
+      url: "https://ravshik.github.io/sz/"
     }
   ]);
 
@@ -772,7 +783,7 @@ test("recruiter can clear archive and all interview data", () => {
   assert.equal(state.slots.some((slot) => slot.id === "slot-001"), false);
   assert.equal(state.slots.some((slot) => slot.id === "slot-002"), true);
   assert.equal(state.candidates.some((candidate) => candidate.interviewSlotId === "slot-001"), false);
-  assert.deepEqual(state.settings.developerTelegramIds, ["1294774551"]);
+  assert.deepEqual(state.settings.developerTelegramIds, RECRUITER_TELEGRAM_IDS);
 
   ({ state } = applyInterviewCommand(
     state,

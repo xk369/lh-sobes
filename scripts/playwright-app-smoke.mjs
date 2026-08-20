@@ -45,7 +45,8 @@ try {
     deviceScaleFactor: 3,
     isMobile: true,
     hasTouch: true,
-    colorScheme: "dark"
+    colorScheme: "dark",
+    acceptDownloads: true
   });
 
   const page = await context.newPage();
@@ -70,8 +71,18 @@ try {
   assert.equal(await page.locator("#candidateView button[data-action='book-slot']").count(), 0, "booked candidate should not see extra dates");
   await assertNoViewportOverflow(page, "candidate booked");
 
-  await page.getByRole("button", { name: "Рекрут", exact: true }).click();
+  await page.getByRole("button", { name: "Кабинет рекрута", exact: true }).click();
   await page.locator(".recruiter-grid").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Аналитика", exact: true }).click();
+  await page.locator(".analytics-panel").waitFor({ timeout: 10000 });
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать XLSX", exact: true }).click();
+  const download = await downloadPromise;
+  assert.match(download.suggestedFilename(), /^sobes-analytics-.*\.xlsx$/);
+  await download.saveAs(path.join(tmpDir, "sobes-analytics-smoke.xlsx"));
+  assert.equal(await download.failure(), null);
+  await assertNoViewportOverflow(page, "recruiter analytics");
+
   await page.getByRole("button", { name: "Даты", exact: true }).click();
   await page.locator("#slot-form").waitFor({ timeout: 10000 });
   assert.equal(await page.getByText("Материалы после записи").count(), 0, "slot form should not show booking materials block");

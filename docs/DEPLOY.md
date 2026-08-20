@@ -9,7 +9,7 @@ Local proxy port: `127.0.0.1:3700`
 ## Runtime Vars
 
 - `TELEGRAM_BOT_TOKEN` — токен бота для отправки уведомлений.
-- `SELF_EMPLOYMENT_BUTTON_URL` — точная PuzzleBot/deep-link ссылка для кнопки `💳 Самозанятость и выплаты`. Если не задана, используется `https://t.me/LOFT_HELPER_V2_BOT?start=samozanyatost`.
+- `SELF_EMPLOYMENT_BUTTON_URL` — точная ссылка для кнопки `💳 Самозанятость и выплаты`. Если не задана, используется `https://ravshik.github.io/sz/`.
 
 ## Safety Rules
 
@@ -17,6 +17,7 @@ Local proxy port: `127.0.0.1:3700`
 - Do not stop existing containers.
 - Do not edit existing nginx server blocks except adding the new `sobes` block.
 - Keep runtime data in `/opt/lh-sobes/data`; it is not committed to GitHub.
+- Candidate pages are public, but recruiter state/actions require a verified Telegram WebApp user from the whitelist.
 
 ## First Deploy
 

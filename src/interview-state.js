@@ -9,12 +9,21 @@ const LEGACY_BOOKING_PREFIXES = [
   "Ждем вас на собеседовании:"
 ];
 const LEGACY_LOFT3_ADDRESS = "ул. Ленинская Слобода, 26с15";
-const DEVELOPER_TELEGRAM_IDS = ["1294774551"];
+const DEVELOPER_TELEGRAM_IDS = [
+  "1294774551",
+  "6774493976",
+  "1711587497",
+  "5950662713",
+  "829555528",
+  "1223141252",
+  "342064797",
+  "985283520"
+];
 const LOFT_23_MAP_URL = "https://yandex.ru/maps/-/CTsmF-9~";
 const RECRUITING_CONTACT = "@LOFT_RECRUITING_MSK";
 const SELF_EMPLOYMENT_BUTTON_URL =
   clean(globalThis.process?.env?.SELF_EMPLOYMENT_BUTTON_URL) ||
-  "https://t.me/LOFT_HELPER_V2_BOT?start=samozanyatost";
+  "https://ravshik.github.io/sz/";
 const STAFF_BOT_MESSAGE = `Для записи на доступные смены используйте бот:
 
 @LoftHallStaffBot`;

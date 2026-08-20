@@ -23,6 +23,34 @@ const SHARED_VENUE_DIR = path.resolve(
   __dirname,
   "../loft_hall_internship_unified_migration_integrate/public/assets/venues"
 );
+const RECRUITER_COMMANDS = new Set([
+  "create_slot",
+  "notify_waitlist",
+  "request_confirmation",
+  "send_due_confirmations",
+  "mark_attendance",
+  "set_result",
+  "send_registration_materials",
+  "send_resource_step",
+  "send_resources",
+  "mark_left_after_interview",
+  "complete_slot",
+  "mark_registration",
+  "mark_all_registered",
+  "record_loss_reason",
+  "clear_archive",
+  "clear_recruiter_data"
+]);
+const CANDIDATE_OWN_COMMANDS = new Set([
+  "upsert_candidate",
+  "book_slot",
+  "join_waitlist",
+  "candidate_confirm",
+  "cancel_booking",
+  "rebook_interest",
+  "record_link_click",
+  "waitlist_slot_response"
+]);
 
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -45,7 +73,7 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/state") {
       const state = await loadState();
-      sendJson(res, { ok: true, state });
+      sendJson(res, { ok: true, state: stateForRequest(req, state) });
       return;
     }
 
@@ -62,10 +90,15 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/command") {
       const command = await readJson(req);
       const state = await loadState();
+      if (RECRUITER_COMMANDS.has(command.action)) {
+        assertRecruiterRequest(req, state);
+      } else if (CANDIDATE_OWN_COMMANDS.has(command.action)) {
+        assertCandidateRequest(req, state, candidateIdFromCommand(command));
+      }
       const next = applyInterviewCommand(state, command);
       const deliveredState = await deliverPendingNotifications(next.state);
       await saveState(deliveredState);
-      sendJson(res, { ok: true, state: deliveredState, result: next.result });
+      sendJson(res, { ok: true, state: stateForRequest(req, deliveredState, next.result), result: next.result });
       return;
     }
 
@@ -77,6 +110,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/reset") {
+      assertRecruiterRequest(req, await loadState());
       const state = createSeedState(new Date().toISOString());
       await saveState(state);
       sendJson(res, { ok: true, state });
@@ -127,6 +161,140 @@ async function loadState() {
 
 async function saveState(state) {
   await writeFile(DATA_FILE, `${JSON.stringify(deriveState(state), null, 2)}\n`, "utf8");
+}
+
+function assertRecruiterRequest(req, state) {
+  if (isRecruiterRequest(req, state)) return;
+
+  const error = new Error("Нет доступа к кабинету рекрута");
+  error.status = 403;
+  throw error;
+}
+
+function assertCandidateRequest(req, state, candidateId) {
+  if (!candidateId || isRecruiterRequest(req, state)) return;
+  const candidate = state.candidates.find((item) => item.id === candidateId);
+  if (!candidate || !candidate.telegramId) return;
+  const telegramUser = telegramUserFromRequest(req);
+  if (telegramUser?.id && String(telegramUser.id) === String(candidate.telegramId)) return;
+
+  const error = new Error("Нет доступа к карточке кандидата");
+  error.status = 403;
+  throw error;
+}
+
+function isRecruiterRequest(req, state) {
+  const telegramUser = telegramUserFromRequest(req);
+  const allowedIds = new Set((state.settings?.developerTelegramIds || []).map((id) => String(id)));
+  return Boolean(telegramUser?.id && allowedIds.has(String(telegramUser.id)));
+}
+
+function stateForRequest(req, state, result = {}) {
+  const normalized = deriveState(state);
+  if (isRecruiterRequest(req, normalized)) return normalized;
+  return publicStateForRequest(req, normalized, result);
+}
+
+function publicStateForRequest(req, state, result = {}) {
+  const candidate = visibleCandidateForRequest(req, state, result.candidateId);
+  const slots = publicSlotsForCandidate(state, candidate);
+  return {
+    ...state,
+    settings: publicSettings(state.settings),
+    slots,
+    candidates: candidate ? [candidate] : [],
+    notifications: candidate ? state.notifications.filter((item) => item.candidateId === candidate.id) : [],
+    events: [],
+    stats: {
+      openSlots: slots.filter((slot) => slot.status === "open").length
+    }
+  };
+}
+
+function publicSettings(settings = {}) {
+  return {
+    ...settings,
+    developerTelegramIds: [],
+    directionMaterials: []
+  };
+}
+
+function publicSlotsForCandidate(state, candidate) {
+  const ownSlotIds = new Set([
+    candidate?.interviewSlotId,
+    ...(candidate?.interviewHistory || []).map((item) => item.slotId)
+  ].filter(Boolean));
+  return state.slots.filter((slot) => slot.status === "open" || ownSlotIds.has(slot.id));
+}
+
+function visibleCandidateForRequest(req, state, resultCandidateId = "") {
+  const directCandidate = resultCandidateId
+    ? state.candidates.find((candidate) => candidate.id === resultCandidateId)
+    : null;
+  if (directCandidate) return directCandidate;
+
+  const telegramId = String(telegramUserFromRequest(req)?.id || "");
+  if (!telegramId) return null;
+
+  return state.candidates
+    .filter((candidate) => String(candidate.telegramId || "") === telegramId)
+    .sort((left, right) => String(right.updatedAt || right.createdAt || "").localeCompare(String(left.updatedAt || left.createdAt || "")))[0] || null;
+}
+
+function candidateIdFromCommand(command = {}) {
+  const payload = command.payload || {};
+  return clean(payload.candidateId || payload.id || payload.candidate?.candidateId || payload.candidate?.id);
+}
+
+function clean(value) {
+  return String(value || "").trim();
+}
+
+function telegramUserFromRequest(req) {
+  const initData = String(req.headers["x-telegram-init-data"] || "");
+  const verified = verifyTelegramWebAppInitData(initData);
+  if (verified) return verified;
+
+  if (!TELEGRAM_BOT_TOKEN && process.env.NODE_ENV !== "production" && isLocalRequest(req)) {
+    return { id: req.headers["x-dev-telegram-id"] || "1294774551" };
+  }
+
+  return null;
+}
+
+function verifyTelegramWebAppInitData(initData) {
+  if (!TELEGRAM_BOT_TOKEN || !initData) return null;
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash") || "";
+  if (!hash) return null;
+  params.delete("hash");
+
+  const dataCheckString = Array.from(params.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secret = createHmac("sha256", "WebAppData").update(TELEGRAM_BOT_TOKEN).digest();
+  const expected = createHmac("sha256", secret).update(dataCheckString).digest("hex");
+  if (!safeCompare(hash, expected)) return null;
+
+  try {
+    const user = JSON.parse(params.get("user") || "{}");
+    return user?.id ? { ...user, id: String(user.id) } : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeCompare(left, right) {
+  const actual = String(left || "");
+  const expected = String(right || "");
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+function isLocalRequest(req) {
+  const address = req.socket?.remoteAddress || "";
+  return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address);
 }
 
 async function deliverPendingNotifications(state) {

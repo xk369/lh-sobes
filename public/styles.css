@@ -163,6 +163,10 @@ h3 {
   gap: 10px;
 }
 
+.shell-left {
+  min-width: 0;
+}
+
 .back-home-link {
   width: fit-content;
   max-width: 100%;
@@ -2012,7 +2016,7 @@ button.is-loading:disabled {
 
 .recruiter-nav {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(108px, 0.8fr));
+  grid-template-columns: repeat(3, minmax(108px, 1fr));
   gap: 10px;
   align-items: stretch;
   margin: 10px 0 12px;
@@ -2037,12 +2041,79 @@ button.is-loading:disabled {
 }
 
 .recruiter-nav .subtab,
-.recruiter-nav .secondary,
 .recruiter-nav .quiet {
   min-height: 48px;
   border-radius: 999px;
   font-size: 14px;
   font-weight: 950;
+}
+
+.analytics-panel {
+  gap: 14px;
+}
+
+.analytics-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analytics-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.analytics-breakdown,
+.analytics-table-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel-head.compact {
+  align-items: center;
+}
+
+.analytics-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--field);
+}
+
+.analytics-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.analytics-table th,
+.analytics-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 11px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: left;
+  vertical-align: top;
+}
+
+.analytics-table th {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.analytics-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.analytics-empty {
+  color: var(--muted) !important;
+  text-align: center !important;
 }
 
 .toolbar {
@@ -2126,9 +2197,67 @@ button.is-loading:disabled {
 
   .subtabs,
   .stats,
-  .stats-grid {
+  .stats-grid,
+  .analytics-stats {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+  }
+
+  .analytics-filter {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-table-wrap {
+    overflow-x: hidden;
+  }
+
+  .analytics-table {
+    min-width: 0;
+  }
+
+  .analytics-table,
+  .analytics-table tbody,
+  .analytics-table tr,
+  .analytics-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .analytics-table thead {
+    display: none;
+  }
+
+  .analytics-table tr {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .analytics-table tr:last-child {
+    border-bottom: 0;
+  }
+
+  .analytics-table td {
+    display: grid;
+    grid-template-columns: minmax(78px, 0.36fr) minmax(0, 1fr);
+    gap: 10px;
+    border-bottom: 0;
+    padding: 6px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .analytics-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-weight: 950;
+  }
+
+  .analytics-table td.analytics-empty {
+    display: block;
+    padding: 12px;
+  }
+
+  .analytics-table td.analytics-empty::before {
+    content: "";
   }
 
   .subtab {
@@ -2205,7 +2334,6 @@ button.is-loading:disabled {
     width: 100%;
   }
 
-  .recruiter-nav .secondary,
   .recruiter-nav .quiet:last-child {
     grid-column: 1 / -1;
   }

@@ -296,3 +296,9 @@ https://t.me/+tpUuI31XJyA2ZWFi
 ```text
 💳 Самозанятость и выплаты
 ```
+
+URL:
+
+```text
+https://ravshik.github.io/sz/
+```

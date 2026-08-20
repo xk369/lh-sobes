@@ -5,6 +5,8 @@ const ui = {
   selectedSlotId: "",
   recruiterSearch: "",
   archiveSearch: "",
+  analyticsFrom: "",
+  analyticsTo: "",
   stageHelpKey: "",
   createSlotFeedback: null,
   actionFeedback: {}
@@ -31,6 +33,13 @@ document.addEventListener("click", async (event) => {
   const action = button.dataset.action;
 
   if (role) {
+    if (role === "recruiter" && !canAccessRecruiter()) {
+      showToast("Нет доступа к кабинету рекрута");
+      ui.role = "candidate";
+      localStorage.setItem("lh_interviews_role", ui.role);
+      render();
+      return;
+    }
     ui.role = role;
     localStorage.setItem("lh_interviews_role", role);
     render();
@@ -57,6 +66,12 @@ document.addEventListener("click", async (event) => {
     if (action === "show-stage-help") {
       ui.stageHelpKey = button.dataset.stageKey || "";
       render();
+      return;
+    }
+
+    if (action === "export-analytics") {
+      downloadAnalyticsXlsx();
+      showToast("Выгрузка XLSX сформирована");
       return;
     }
 
@@ -249,7 +264,7 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "reset-demo") {
-      const response = await fetchJson("/api/reset", { method: "POST" });
+      const response = await fetchJson("/api/reset", { method: "POST", headers: telegramAuthHeaders() });
       state = response.state;
       ui.selectedSlotId = state.slots[0]?.id || "";
       clearRememberedCandidate();
@@ -290,6 +305,18 @@ document.addEventListener("input", (event) => {
       input.focus();
       input.setSelectionRange(ui.archiveSearch.length, ui.archiveSearch.length);
     });
+    return;
+  }
+
+  if (event.target.matches("[data-analytics-from]")) {
+    ui.analyticsFrom = event.target.value;
+    render();
+    return;
+  }
+
+  if (event.target.matches("[data-analytics-to]")) {
+    ui.analyticsTo = event.target.value;
+    render();
     return;
   }
 
@@ -349,11 +376,14 @@ document.addEventListener("submit", async (event) => {
 });
 
 async function loadState() {
-  const response = await fetchJson("/api/state");
+  const response = await fetchJson("/api/state", { headers: telegramAuthHeaders() });
   state = response.state;
   reconcileRememberedCandidate();
   if (isDeveloperUser() && !localStorage.getItem("lh_interviews_role")) {
     ui.role = "recruiter";
+  } else if (ui.role === "recruiter" && !canAccessRecruiter()) {
+    ui.role = "candidate";
+    localStorage.setItem("lh_interviews_role", ui.role);
   }
   ui.selectedSlotId = ui.selectedSlotId || state.slots[0]?.id || "";
   render();
@@ -362,7 +392,7 @@ async function loadState() {
 async function runCommand(action, payload, feedbackButton = null) {
   const response = await fetchJson("/api/command", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...telegramAuthHeaders() },
     body: JSON.stringify({ action, payload })
   });
   state = response.state;
@@ -459,6 +489,11 @@ function render() {
     ui.selectedSlotId = visibleActive[0].id;
   }
 
+  const recruiterAccess = canAccessRecruiter();
+  if (ui.role === "recruiter" && !recruiterAccess) {
+    ui.role = "candidate";
+    localStorage.setItem("lh_interviews_role", ui.role);
+  }
   const candidate = getCurrentCandidate();
   const roleSwitchTarget = ui.role === "candidate" ? "recruiter" : "candidate";
   const roleSwitchLabel = ui.role === "candidate" ? "Кабинет рекрута" : "К форме записи";
@@ -466,13 +501,19 @@ function render() {
   app.innerHTML = `
     <header class="top">
       <div class="shell-bar">
-        <a class="back-home-link" href="/" aria-label="Вернуться в главное меню">
-          <span>‹</span>
-          <span>Главное меню</span>
-        </a>
+        <div class="shell-left">
+          ${ui.role === "recruiter" && ui.recruiterTab !== "journal" ? `
+            <button type="button" class="back-home-link" data-tab="journal" aria-label="Открыть журнал">
+              <span>‹</span>
+              <span>Журнал</span>
+            </button>
+          ` : ""}
+        </div>
+        ${recruiterAccess ? `
         <button class="role-toggle" data-role="${roleSwitchTarget}" type="button" aria-label="${roleSwitchLabel}" title="${roleSwitchLabel}">
           ${ui.role === "candidate" ? "Р" : "К"}
         </button>
+        ` : ""}
       </div>
       <div class="head">
         <div>
@@ -481,11 +522,6 @@ function render() {
         </div>
       </div>
     </header>
-
-    <nav class="tabs" aria-label="Роль">
-      <button type="button" data-role="candidate" class="tab ${ui.role === "candidate" ? "active" : ""}">Кандидат</button>
-      <button type="button" data-role="recruiter" class="tab ${ui.role === "recruiter" ? "active" : ""}">Рекрут</button>
-    </nav>
 
     ${ui.role === "candidate" ? renderCandidateView(candidate) : renderRecruiterView()}
   `;
@@ -577,6 +613,23 @@ function renderCandidateForm(candidate) {
 
 function telegramWebAppUser() {
   return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+}
+
+function telegramAuthHeaders() {
+  const initData = window.Telegram?.WebApp?.initData || "";
+  return initData ? { "X-Telegram-Init-Data": initData } : {};
+}
+
+function requestHeaders(extra = {}) {
+  return { ...extra, ...telegramAuthHeaders() };
+}
+
+function canAccessRecruiter() {
+  return isDeveloperUser() || isLocalDevelopmentAccess();
+}
+
+function isLocalDevelopmentAccess() {
+  return ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
 }
 
 function renderCandidateSlot(slot) {
@@ -782,6 +835,19 @@ function renderRegistrationLink(link, candidate) {
 }
 
 function renderRecruiterView() {
+  if (!canAccessRecruiter()) {
+    return `
+      <section class="panel access-denied-panel">
+        <div class="panel-head">
+          <h2>Нет доступа</h2>
+          <span class="pill bad">Рекрут</span>
+        </div>
+        <p class="muted">Кабинет рекрута доступен только разрешенным Telegram ID.</p>
+        <button type="button" class="secondary" data-role="candidate">К форме записи</button>
+      </section>
+    `;
+  }
+
   if (!["journal", "dates", "analytics"].includes(ui.recruiterTab)) {
     ui.recruiterTab = "journal";
   }
@@ -789,7 +855,6 @@ function renderRecruiterView() {
   return `
     <section class="recruiter-grid">
       <nav class="recruiter-nav" aria-label="Разделы рекрута">
-        <button type="button" class="secondary" data-role="candidate">К форме записи</button>
         ${renderTab("journal", "Журнал")}
         ${renderTab("dates", "Даты")}
         ${renderTab("analytics", "Аналитика")}
@@ -1408,33 +1473,361 @@ function renderResourceCandidate(candidate, index = 0) {
 }
 
 function renderAnalyticsTab() {
+  const analytics = analyticsData();
   return `
-    <section class="grid">
-      <section class="panel">
-        <h2>Воронка</h2>
-        <div class="timeline">
-          ${renderStep("Запись", state.stats.bookedTotal > 0)}
-          ${renderStep("Подтверждение", state.stats.confirmedTotal > 0)}
-          ${renderStep("Явка", state.stats.arrivedTotal > 0)}
-          ${renderStep("Регистрация", state.stats.registeredTotal > 0)}
+    <section class="panel analytics-panel">
+      <div class="panel-head">
+        <div class="panel-title-stack">
+          <h2>Аналитика</h2>
+          <span>${escapeHtml(analytics.periodLabel)}</span>
         </div>
-      </section>
-      <section class="panel">
-        <h2>Журнал явки</h2>
+        <button
+          type="button"
+          class="secondary"
+          data-action="export-analytics"
+          ${analytics.rows.length === 0 && analytics.slots.length === 0 ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Скачать XLSX
+        </button>
+      </div>
+
+      <div class="analytics-filter">
+        <label>
+          С
+          <input type="date" data-analytics-from value="${escapeAttr(ui.analyticsFrom)}" lang="ru-RU" />
+        </label>
+        <label>
+          По
+          <input type="date" data-analytics-to value="${escapeAttr(ui.analyticsTo)}" lang="ru-RU" />
+        </label>
+      </div>
+
+      <div class="stats-grid analytics-stats">
+        ${renderAnalyticsStat("Собесов", analytics.metrics.slots)}
+        ${renderAnalyticsStat("Кандидатов", analytics.metrics.candidates)}
+        ${renderAnalyticsStat("Пришли", analytics.metrics.arrived)}
+        ${renderAnalyticsStat("Потеряны", analytics.metrics.lost)}
+        ${renderAnalyticsStat("Получили 5/5", analytics.metrics.completedMaterials)}
+        ${renderAnalyticsStat("Отказ после собеса", analytics.metrics.leftAfter)}
+        ${renderAnalyticsStat("Не пришли", analytics.metrics.noShow)}
+        ${renderAnalyticsStat("Ждут дату", analytics.metrics.waitlist)}
+      </div>
+
+      <section class="analytics-breakdown">
+        <h3>Быстрый срез</h3>
         <div class="reason-grid">${renderStatsMap({
-          arrived: state.stats.arrivedTotal,
-          no_show: state.stats.noShowTotal,
-          no_confirmation: state.stats.noConfirmationTotal,
-          left_after: state.stats.leftAfterTotal
-        }, attendanceLabel)}</div>
+          booked: analytics.metrics.booked,
+          arrived: analytics.metrics.arrived,
+          lost: analytics.metrics.lost,
+          completed: analytics.metrics.completedMaterials
+        }, analyticsMetricLabel)}</div>
       </section>
-      <section class="panel">
-        <h2>Последние события</h2>
-        <div class="event-list">${state.events.slice(0, 8).map(renderEvent).join("")}</div>
+
+      <section class="analytics-table-section">
+        <div class="panel-head compact">
+          <h3>Кандидаты</h3>
+          <span class="pill accent">${analytics.rows.length}</span>
+        </div>
+        <div class="analytics-table-wrap">
+          <table class="analytics-table">
+            <thead>
+              <tr>
+                <th>ФИО</th>
+                <th>Telegram</th>
+                <th>Телефон</th>
+                <th>Собес</th>
+                <th>Статус</th>
+                <th>Явка</th>
+                <th>Материалы</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${analytics.rows.map(renderAnalyticsRow).join("") || `
+                <tr>
+                  <td colspan="7" class="analytics-empty">Данных за период нет</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
       </section>
     </section>
   `;
 }
+
+function renderAnalyticsStat(label, value) {
+  return `
+    <div class="stat">
+      <b>${escapeHtml(value)}</b>
+      <span>${escapeHtml(label)}</span>
+    </div>
+  `;
+}
+
+function renderAnalyticsRow(row) {
+  return `
+    <tr>
+      <td data-label="ФИО">${escapeHtml(row.name)}</td>
+      <td data-label="Telegram">${escapeHtml(row.telegram)}</td>
+      <td data-label="Телефон">${escapeHtml(row.phone)}</td>
+      <td data-label="Собес">${escapeHtml(row.slotLabel)}</td>
+      <td data-label="Статус">${escapeHtml(row.status)}</td>
+      <td data-label="Явка">${escapeHtml(row.attendance)}</td>
+      <td data-label="Материалы">${escapeHtml(row.materials)}</td>
+    </tr>
+  `;
+}
+
+function analyticsData() {
+  const slots = state.slots.filter(slotInAnalyticsRange);
+  const slotIds = new Set(slots.map((slot) => slot.id));
+  const rows = state.candidates
+    .filter((candidate) => candidateInAnalyticsRange(candidate, slotIds))
+    .map(analyticsCandidateRow)
+    .sort((left, right) => String(left.sortDate).localeCompare(String(right.sortDate)) || left.name.localeCompare(right.name));
+  const lostStatuses = new Set(["no_show", "declined_before_interview", "no_confirmation", "left_after_interview", "not_interested", "rejected"]);
+  const completedMaterials = rows.filter((row) => row.materialsDone >= row.materialsTotal && row.materialsTotal > 0).length;
+
+  return {
+    slots,
+    rows,
+    periodLabel: analyticsPeriodLabel(),
+    metrics: {
+      slots: slots.length,
+      candidates: rows.length,
+      booked: rows.filter((row) => row.raw.status !== "waitlist").length,
+      arrived: rows.filter((row) => row.raw.attendanceStatus === "arrived").length,
+      noShow: rows.filter((row) => row.raw.attendanceStatus === "no_show").length,
+      leftAfter: rows.filter((row) => row.raw.status === "left_after_interview").length,
+      lost: rows.filter((row) => lostStatuses.has(row.raw.status) || ["no_show", "declined_before", "no_confirmation"].includes(row.raw.attendanceStatus)).length,
+      completedMaterials,
+      waitlist: rows.filter((row) => row.raw.status === "waitlist").length
+    }
+  };
+}
+
+function analyticsCandidateRow(candidate) {
+  const slot = candidate.interviewSlotId ? state.slots.find((item) => item.id === candidate.interviewSlotId) : null;
+  const materialsDone = candidate.resourceStepsSent?.length || 0;
+  const materialsTotal = resourceSteps().length || 0;
+  return {
+    raw: candidate,
+    sortDate: slot?.date || candidate.createdAt || "",
+    name: candidate.name || "Без ФИО",
+    telegram: cleanTelegram(candidate.telegram) || "без Telegram",
+    phone: candidate.phone || "без телефона",
+    slotLabel: slot ? slotLabel(slot) : "без даты",
+    status: statusLabel(candidate.status),
+    attendance: journalStatusLabel(candidate),
+    materials: `${materialsDone}/${materialsTotal}`,
+    materialsDone,
+    materialsTotal
+  };
+}
+
+function slotInAnalyticsRange(slot) {
+  return dateInRange(slot.date, ui.analyticsFrom, ui.analyticsTo);
+}
+
+function candidateInAnalyticsRange(candidate, slotIds) {
+  if (candidate.interviewSlotId && slotIds.has(candidate.interviewSlotId)) return true;
+  if (candidate.interviewSlotId) return false;
+  return dateInRange(String(candidate.createdAt || "").slice(0, 10), ui.analyticsFrom, ui.analyticsTo);
+}
+
+function dateInRange(date, from, to) {
+  const value = String(date || "").slice(0, 10);
+  if (!value) return !from && !to;
+  if (from && value < from) return false;
+  if (to && value > to) return false;
+  return true;
+}
+
+function analyticsPeriodLabel() {
+  const from = ui.analyticsFrom ? formatDate(ui.analyticsFrom) : "с начала";
+  const to = ui.analyticsTo ? formatDate(ui.analyticsTo) : "по сегодня";
+  return `${from} - ${to}`;
+}
+
+function analyticsMetricLabel(value) {
+  const labels = {
+    booked: "Записались",
+    arrived: "Пришли",
+    lost: "Потеряны",
+    completed: "Получили все материалы"
+  };
+  return labels[value] || value;
+}
+
+function downloadAnalyticsXlsx() {
+  const analytics = analyticsData();
+  const rows = [
+    ["Период", analytics.periodLabel],
+    ["Собесов", analytics.metrics.slots],
+    ["Кандидатов", analytics.metrics.candidates],
+    ["Пришли", analytics.metrics.arrived],
+    ["Потеряны", analytics.metrics.lost],
+    ["Получили 5/5", analytics.metrics.completedMaterials],
+    ["Отказ после собеса", analytics.metrics.leftAfter],
+    ["Не пришли", analytics.metrics.noShow],
+    [],
+    ["ФИО", "Telegram", "Телефон", "Собес", "Статус", "Явка", "Материалы"],
+    ...analytics.rows.map((row) => [row.name, row.telegram, row.phone, row.slotLabel, row.status, row.attendance, row.materials])
+  ];
+  const blob = createXlsxBlob(rows);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `sobes-analytics-${ui.analyticsFrom || "start"}-${ui.analyticsTo || "today"}.xlsx`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function createXlsxBlob(rows) {
+  const files = {
+    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Аналитика" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`,
+    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+    "xl/worksheets/sheet1.xml": worksheetXml(rows)
+  };
+  return new Blob([zipStore(files)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  });
+}
+
+function worksheetXml(rows) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    ${rows.map((row, index) => worksheetRowXml(row, index + 1)).join("\n")}
+  </sheetData>
+</worksheet>`;
+}
+
+function worksheetRowXml(row, rowIndex) {
+  return `<row r="${rowIndex}">${(row || []).map((value, columnIndex) => worksheetCellXml(value, rowIndex, columnIndex)).join("")}</row>`;
+}
+
+function worksheetCellXml(value, rowIndex, columnIndex) {
+  const ref = `${xlsxColumnName(columnIndex)}${rowIndex}`;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `<c r="${ref}"><v>${value}</v></c>`;
+  }
+  return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(String(value ?? ""))}</t></is></c>`;
+}
+
+function xlsxColumnName(index) {
+  let value = index + 1;
+  let label = "";
+  while (value > 0) {
+    const modulo = (value - 1) % 26;
+    label = String.fromCharCode(65 + modulo) + label;
+    value = Math.floor((value - modulo) / 26);
+  }
+  return label;
+}
+
+function zipStore(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = encoder.encode(name);
+    const dataBytes = encoder.encode(content);
+    const crc = crc32(dataBytes);
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, 0, true);
+    localView.setUint16(12, 0, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, dataBytes.length, true);
+    localView.setUint32(22, dataBytes.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+    localParts.push(localHeader, dataBytes);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, 0, true);
+    centralView.setUint16(14, 0, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, dataBytes.length, true);
+    centralView.setUint32(24, dataBytes.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + dataBytes.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, Object.keys(files).length, true);
+  endView.setUint16(10, Object.keys(files).length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+
+  return new Blob([...localParts, ...centralParts, end]);
+}
+
+function crc32(bytes) {
+  let crc = -1;
+  for (const byte of bytes) {
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff];
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
 
 function renderStatsMap(stats, labelFn) {
   return Object.entries(stats || {})
@@ -1790,7 +2183,7 @@ function scheduleCandidateAutosave() {
       };
       const response = await fetchJson("/api/command", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: requestHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload)
       });
       state = response.state;
@@ -2095,6 +2488,13 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function escapeXml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function escapeAttr(value) {
