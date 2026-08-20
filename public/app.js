@@ -1699,7 +1699,7 @@ function renderAnalyticsCandidatesView(title, rows, note) {
 
 function renderAnalyticsCandidateGroups(rows) {
   const groups = groupedAnalyticsRows(rows);
-  return groups.map((group) => renderAnalyticsGroup(group)).join("") || '<div class="empty">Кандидатов за период нет</div>';
+  return groups.map((group) => renderAnalyticsGroup(group, { collapsible: true })).join("") || '<div class="empty">Кандидатов за период нет</div>';
 }
 
 function renderAnalyticsGroup(group, options = {}) {

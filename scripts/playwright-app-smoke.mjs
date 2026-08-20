@@ -92,7 +92,12 @@ try {
   await page.getByRole("button", { name: /Кандидаты/ }).click();
   await page.locator("[data-analytics-search]").fill(candidateTelegram);
   assert.equal(await page.locator("[data-analytics-search]").inputValue(), candidateTelegram, "analytics candidate search should keep typed text");
-  await page.locator(".analytics-group").first().waitFor({ timeout: 10000 });
+  const candidateGroup = page.locator("[data-analytics-candidates-results] .analytics-group-details").first();
+  await candidateGroup.locator(":scope > summary").waitFor({ timeout: 10000 });
+  assert.equal(await candidateGroup.evaluate((node) => node.open), false, "candidate status groups should be collapsed by default");
+  assert.equal(await candidateGroup.locator(".analytics-person-card").first().isVisible(), false, "candidate cards should be hidden before group is opened");
+  await candidateGroup.locator(":scope > summary").click();
+  await candidateGroup.locator(".analytics-person-card").first().waitFor({ timeout: 10000 });
   await assertNoViewportOverflow(page, "recruiter analytics candidates");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Скачать XLSX", exact: true }).click();
