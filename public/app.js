@@ -264,8 +264,17 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "clear-recruiter-data") {
-      if (!await confirmAction("Очистить все данные sobes: даты, кандидатов, ожидание, уведомления и события? Настройки площадок сохранятся.")) return;
-      const response = await runCommand("clear_recruiter_data", {}, button);
+      if (!isLocalDevelopmentAccess()) {
+        showToast("Полный сброс отключен в рабочей версии");
+        return;
+      }
+      if (!await confirmAction("Тестовый полный сброс удалит даты, кандидатов, ожидание, уведомления и события. Продовые данные так очищать нельзя.")) return;
+      const confirmText = window.prompt("Введите ОЧИСТИТЬ для тестового полного сброса") || "";
+      if (confirmText.trim() !== "ОЧИСТИТЬ") {
+        showToast("Полный сброс отменен");
+        return;
+      }
+      const response = await runCommand("clear_recruiter_data", { confirmText }, button);
       clearRememberedCandidate();
       ui.selectedSlotId = "";
       showToast(`Данные очищены: дат ${response.result.removedSlots}, кандидатов ${response.result.removedCandidates}`);
@@ -358,6 +367,10 @@ document.addEventListener("submit", async (event) => {
 
   try {
     if (form.id === "candidate-form") {
+      if (!ui.candidateId) {
+        showToast("Данные сохранятся после записи или ожидания");
+        return;
+      }
       const candidate = collectCandidateProfile();
       if (!candidate) return;
       const response = await runCommand("upsert_candidate", candidate);
@@ -1320,12 +1333,13 @@ function renderDataToolsPanel() {
   const activeCount = activeSlots().length;
   const archivedCount = archivedSlots().length;
   const candidateCount = state.candidates.length;
+  const canFullReset = isLocalDevelopmentAccess();
 
   return `
     <section class="data-tools-panel">
       <div class="data-tools-copy">
         <b>Очистка данных</b>
-        <span>Для тестов можно сбросить журнал без изменения площадок, проходок и шаблонов материалов.</span>
+        <span>${canFullReset ? "Полный сброс доступен только локально и требует ручного слова подтверждения." : "В рабочей версии доступна только очистка архива. Полный сброс отключен, чтобы случайно не снести продукт."}</span>
       </div>
       <div class="data-tools-actions">
         <button
@@ -1336,14 +1350,16 @@ function renderDataToolsPanel() {
         >
           Очистить архив
         </button>
-        <button
-          type="button"
-          class="danger${actionFeedbackClass("clear-recruiter-data")}"
-          data-action="clear-recruiter-data"
-          ${activeCount === 0 && archivedCount === 0 && candidateCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
-        >
-          Очистить все данные
-        </button>
+        ${canFullReset ? `
+          <button
+            type="button"
+            class="danger${actionFeedbackClass("clear-recruiter-data")}"
+            data-action="clear-recruiter-data"
+            ${activeCount === 0 && archivedCount === 0 && candidateCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
+          >
+            Тестовый полный сброс
+          </button>
+        ` : '<span class="danger-lock">Полный сброс только через техподтверждение</span>'}
       </div>
     </section>
   `;
@@ -1434,6 +1450,7 @@ function renderArchiveStatusChip(candidate) {
 }
 
 function renderRecruiterSlot(slot) {
+  const booked = Math.max(Number(slot.seats || 0) - Number(slot.availableSeats || 0), 0);
   return `
     <article class="date-card interview-date-card ${slot.id === ui.selectedSlotId ? "selected" : ""}">
       <div class="interview-date-main">
@@ -1446,6 +1463,11 @@ function renderRecruiterSlot(slot) {
       <div class="slot-place">
         <b>${escapeHtml(slot.venue)}</b>
         ${slot.venueAddress ? `<span>${escapeHtml(slot.venueAddress)}</span>` : ""}
+      </div>
+      <div class="slot-capacity-line" aria-label="Места на дате">
+        <span>Создано мест: <b>${Number(slot.seats || 0)}</b></span>
+        <span>Свободно: <b>${Number(slot.availableSeats || 0)}</b></span>
+        <span>Записано: <b>${booked}</b></span>
       </div>
       <div class="candidate-actions">
         <button
@@ -1816,7 +1838,7 @@ function analyticsData() {
     metrics: {
       slots: slots.length,
       candidates: rows.length,
-      booked: rows.filter((row) => row.raw.status !== "waitlist").length,
+      booked: rows.filter((row) => row.raw.interviewSlotId && !["waitlist", "candidate_created"].includes(row.raw.status)).length,
       arrived: rows.filter((row) => row.raw.attendanceStatus === "arrived").length,
       noShow: rows.filter((row) => row.raw.attendanceStatus === "no_show").length,
       leftAfter: rows.filter((row) => row.raw.status === "left_after_interview").length,
@@ -2612,10 +2634,12 @@ function candidateStages(candidate) {
     {
       key: "booking",
       label: "Запись",
-      title: candidate.status === "waitlist" ? "Ожидает дату" : "Дата выбрана",
+      title: candidate.status === "waitlist" ? "Ожидает дату" : candidate.interviewSlotId ? "Дата выбрана" : "Без даты",
       description: candidate.status === "waitlist"
         ? "Кандидат в общем листе ожидания и получит уведомление о новой дате."
-        : "Кандидат записан на конкретную дату собеседования.",
+        : candidate.interviewSlotId
+          ? "Кандидат записан на конкретную дату собеседования."
+          : "Кандидат заполнил контакты, но еще не записался и не вставал в очередь.",
       icon: "calendar"
     },
     {
@@ -2738,6 +2762,10 @@ function scheduleCandidateAutosave() {
     const form = document.querySelector("#candidate-form");
     const status = document.querySelector("#candidateAutosaveStatus");
     if (!form || !status) return;
+    if (!ui.candidateId) {
+      status.textContent = "Данные сохранятся после записи или ожидания";
+      return;
+    }
 
     const data = Object.fromEntries(new FormData(form));
     const validation = validateCandidateProfile({
@@ -2845,7 +2873,7 @@ function cleanTelegram(value) {
 function validateCandidateProfile(candidate = {}) {
   const name = String(candidate.name || "").trim().replace(/\s+/g, " ");
   if (!isValidFullName(name)) {
-    return { ok: false, message: "Укажите имя и фамилию без цифр" };
+    return { ok: false, message: "ФИО нужно русскими буквами: Иванов Иван" };
   }
 
   const phone = normalizeRussianPhoneInput(candidate.phone);
@@ -2857,7 +2885,7 @@ function validateCandidateProfile(candidate = {}) {
     return { ok: false, message: "Telegram обязателен" };
   }
 
-  return { ok: true, name, phone };
+  return { ok: true, name: normalizeFullName(name), phone };
 }
 
 function isValidFullName(value) {
@@ -2866,7 +2894,27 @@ function isValidFullName(value) {
   if (/[\d_/@#$%^&*=+{}[\]<>|~]/.test(text)) return false;
   const parts = text.split(" ").filter(Boolean);
   if (parts.length < 2) return false;
-  return parts.every((part) => /^[A-Za-zА-Яа-яЁё-]{2,}$/.test(part));
+  return parts.every((part) => /^[А-Яа-яЁё-]{2,}$/.test(part));
+}
+
+function normalizeFullName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map(normalizeNameWord)
+    .join(" ");
+}
+
+function normalizeNameWord(word) {
+  return word
+    .split("-")
+    .map((part) => {
+      const lower = part.toLocaleLowerCase("ru-RU");
+      return lower ? `${lower.slice(0, 1).toLocaleUpperCase("ru-RU")}${lower.slice(1)}` : "";
+    })
+    .join("-");
 }
 
 function normalizeRussianPhoneInput(value) {
@@ -2891,6 +2939,7 @@ function slotLabel(slot) {
 
 function statusLabel(status) {
   const labels = {
+    candidate_created: "Анкета",
     waitlist: "Ожидает дату",
     booked: "Записан",
     confirmation_pending: "Ждет подтверждение",
@@ -2924,6 +2973,7 @@ function historyOutcomeLabel(item = {}) {
 
 function stageLabel(candidate) {
   if (candidate.resourceStepsSent?.length > 0) return `Материалы ${candidate.resourceStepsSent.length}/${resourceSteps().length || 0}`;
+  if (candidate.status === "candidate_created") return "Анкета сохранена";
   if (candidate.status === "waitlist") return "В листе ожидания";
   if (candidate.status === "booked") return "Записан на собеседование";
   if (candidate.status === "confirmation_pending") return "Ждет подтверждение";

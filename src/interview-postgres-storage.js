@@ -710,7 +710,7 @@ function candidateToParticipantRow(candidate, profileIdByCandidateId) {
     candidateProfileId: profileIdByCandidateId.get(candidate.id),
     interviewSlotId: clean(candidate.interviewSlotId) || null,
     waitlistTargetSlotId: clean(candidate.waitlistTargetSlotId) || null,
-    status: clean(candidate.status || "waitlist"),
+    status: clean(candidate.status || "candidate_created"),
     candidateLayerStatus: clean(candidate.candidateLayerStatus || "candidate_created"),
     confirmationStatus: clean(candidate.confirmationStatus || "not_requested"),
     confirmationRequestedAt: optionalTimestamp(candidate.confirmationRequestedAt),

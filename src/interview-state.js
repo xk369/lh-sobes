@@ -18,7 +18,7 @@ const DEVELOPER_TELEGRAM_IDS = [
   "1223141252",
   "342064797",
   "985283520",
-  "5067088817", //Alim
+  "5067088817"
 ];
 const LOFT_23_MAP_URL = "https://yandex.ru/maps/-/CTsmF-9~";
 const RECRUITING_CONTACT = "@LOFT_RECRUITING_MSK";
@@ -784,6 +784,9 @@ export function applyInterviewCommand(input, command, options = {}) {
     }
 
     case "clear_recruiter_data": {
+      if (clean(payload.confirmText) !== "ОЧИСТИТЬ") {
+        throw new Error("Полная очистка требует технического подтверждения");
+      }
       const removedSlots = state.slots.length;
       const removedCandidates = state.candidates.length;
       state.slots = [];
@@ -1279,7 +1282,7 @@ function createCandidate(payload, now) {
     source: clean(payload.source || "Не указан"),
     availability: clean(payload.availability),
     note: clean(payload.note),
-    status: payload.status || "waitlist",
+    status: payload.status || "candidate_created",
     candidateLayerStatus: payload.candidateLayerStatus || "candidate_created",
     interviewSlotId: payload.interviewSlotId || null,
     confirmationStatus: payload.confirmationStatus || "not_requested",
@@ -1313,7 +1316,7 @@ function normalizeCandidate(candidate) {
     source: clean(candidate.source || "Не указан"),
     availability: clean(candidate.availability),
     note: clean(candidate.note),
-    status: candidate.status || "waitlist",
+    status: candidate.status || "candidate_created",
     candidateLayerStatus: candidate.candidateLayerStatus || "candidate_created",
     interviewSlotId: candidate.interviewSlotId || null,
     waitlistJoinedAt: candidate.waitlistJoinedAt || null,
@@ -1430,7 +1433,7 @@ function upsertCandidate(state, payload, now) {
       : createCandidate(
           {
             id: createId || nextId("cand", state.candidates),
-            status: "waitlist",
+            status: "candidate_created",
             candidateLayerStatus: "candidate_created"
           },
           now
@@ -1479,11 +1482,26 @@ function isValidFullName(value) {
   if (/[\d_/@#$%^&*=+{}[\]<>|~]/.test(text)) return false;
   const parts = text.split(" ").filter(Boolean);
   if (parts.length < 2) return false;
-  return parts.every((part) => /^[A-Za-zА-Яа-яЁё-]{2,}$/.test(part));
+  return parts.every((part) => /^[А-Яа-яЁё-]{2,}$/.test(part));
 }
 
 function normalizeFullName(value) {
-  return clean(value).replace(/\s+/g, " ");
+  return clean(value)
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map(normalizeNameWord)
+    .join(" ");
+}
+
+function normalizeNameWord(word) {
+  return word
+    .split("-")
+    .map((part) => {
+      const lower = part.toLocaleLowerCase("ru-RU");
+      return lower ? `${lower.slice(0, 1).toLocaleUpperCase("ru-RU")}${lower.slice(1)}` : "";
+    })
+    .join("-");
 }
 
 function normalizeRussianPhone(value) {

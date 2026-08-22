@@ -412,14 +412,15 @@ async function deliverPendingNotifications(state) {
     }
 
     try {
-      const messageText = [notification.title, notification.message].filter(Boolean).join("\n\n");
-      if (messageText) {
-        const chunks = splitTelegramText(messageText);
+      const telegramText = telegramMessageText(notification);
+      if (telegramText.text) {
+        const chunks = splitTelegramText(telegramText.text);
         for (const [index, text] of chunks.entries()) {
           const replyMarkup = index === chunks.length - 1 ? replyMarkupForNotification(notification, candidate) : undefined;
           const message = await sendTelegramApi("sendMessage", {
             chat_id: candidate.telegramId,
             text,
+            parse_mode: telegramText.parseMode,
             disable_web_page_preview: true,
             reply_markup: replyMarkup
           });
@@ -446,6 +447,23 @@ async function deliverPendingNotifications(state) {
   }
 
   return deriveState(nextState);
+}
+
+function telegramMessageText(notification = {}) {
+  const title = clean(notification.title);
+  const message = String(notification.message || "").trim();
+  if (!title) return { text: message, parseMode: undefined };
+  return {
+    text: [`<b>${escapeTelegramHtml(title)}</b>`, escapeTelegramHtml(message)].filter(Boolean).join("\n\n"),
+    parseMode: "HTML"
+  };
+}
+
+function escapeTelegramHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 async function handleTelegramActionUrl(url, res) {

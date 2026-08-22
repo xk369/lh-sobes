@@ -106,6 +106,20 @@ try {
   await page.locator("input[name='telegramId']").evaluate((input, value) => {
     input.value = value;
   }, candidateTelegramId);
+  await page.locator("#candidateAutosaveStatus", { hasText: "Данные сохранятся после записи или ожидания" }).waitFor({ timeout: 10000 });
+  let stateBeforeBooking = (await fetchJson(`${baseUrl}/api/state`)).state;
+  assert.equal(
+    stateBeforeBooking.candidates.some((candidate) => candidate.telegram === candidateTelegram),
+    false,
+    "typing candidate fields should not create a waitlist candidate"
+  );
+  await page.locator("input[name='phone']").press("Enter");
+  stateBeforeBooking = (await fetchJson(`${baseUrl}/api/state`)).state;
+  assert.equal(
+    stateBeforeBooking.candidates.some((candidate) => candidate.telegram === candidateTelegram),
+    false,
+    "submitting candidate form before booking should not create a waitlist candidate"
+  );
   await page.locator("#candidateView .interview-date-card").first().getByRole("button", { name: "Записаться" }).click();
   await page.waitForFunction(() => document.querySelectorAll("#candidateView button[data-action='book-slot']").length === 0);
   assert.equal(await page.locator("#candidateView button[data-action='book-slot']").count(), 0, "booked candidate should not see extra dates");

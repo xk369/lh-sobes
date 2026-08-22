@@ -502,7 +502,7 @@ test("candidate telegram is required for shared candidate records", () => {
         {
           action: "upsert_candidate",
           payload: {
-            name: "Кандидат Без Telegram",
+            name: "Кандидат Безтелеграма",
             phone: "+7 900 000-00-00",
             source: "Мини-приложение"
           }
@@ -515,6 +515,24 @@ test("candidate telegram is required for shared candidate records", () => {
 
 test("candidate profile requires readable full name and Russian phone", () => {
   const state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  const normalized = applyInterviewCommand(
+    state,
+    {
+      action: "upsert_candidate",
+      payload: {
+        name: "иванов ИВАН",
+        phone: "+7 900 000-00-01",
+        telegram: "@good_name",
+        source: "Мини-приложение"
+      }
+    },
+    { now: "2026-08-10T09:59:00.000Z" }
+  );
+  assert.equal(
+    normalized.state.candidates.find((candidate) => candidate.id === normalized.result.candidateId).name,
+    "Иванов Иван"
+  );
 
   assert.throws(
     () =>
@@ -541,6 +559,24 @@ test("candidate profile requires readable full name and Russian phone", () => {
         {
           action: "upsert_candidate",
           payload: {
+            name: "Test Candidate",
+            phone: "+7 900 000-00-00",
+            telegram: "@latin_name",
+            source: "Мини-приложение"
+          }
+        },
+        { now: "2026-08-10T10:00:30.000Z" }
+      ),
+    /ФИО/
+  );
+
+  assert.throws(
+    () =>
+      applyInterviewCommand(
+        state,
+        {
+          action: "upsert_candidate",
+          payload: {
             name: "Нормальный Кандидат",
             phone: "+1 555 000-00-00",
             telegram: "@bad_phone",
@@ -551,6 +587,64 @@ test("candidate profile requires readable full name and Russian phone", () => {
       ),
     /Телефон/
   );
+});
+
+test("saved profile is not notified as waitlist unless candidate explicitly joins waitlist", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+  state.candidates = state.candidates.filter((candidate) => candidate.status !== "waitlist");
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "upsert_candidate",
+      payload: {
+        name: "Анкета Сохранена",
+        phone: "+7 900 000-00-02",
+        telegram: "@saved_profile",
+        source: "Мини-приложение"
+      }
+    },
+    { now: "2026-08-10T10:00:00.000Z" }
+  ));
+
+  const created = state.candidates.find((candidate) => candidate.telegram === "@saved_profile");
+  assert.equal(created.status, "candidate_created");
+  assert.equal(created.waitlistJoinedAt, null);
+
+  const result = applyInterviewCommand(
+    state,
+    {
+      action: "create_slot",
+      payload: {
+        date: "2026-08-20",
+        time: "17:00",
+        venueId: "loft23",
+        seats: 4
+      }
+    },
+    { now: "2026-08-10T10:05:00.000Z" }
+  );
+
+  assert.equal(result.result.notifiedCount, 0);
+
+  ({ state } = applyInterviewCommand(
+    state,
+    {
+      action: "join_waitlist",
+      payload: {
+        candidateId: created.id,
+        name: "Анкета Сохранена",
+        phone: "+7 900 000-00-02",
+        telegram: "@saved_profile",
+        source: "Мини-приложение"
+      }
+    },
+    { now: "2026-08-10T10:06:00.000Z" }
+  ));
+
+  const waitlisted = state.candidates.find((candidate) => candidate.telegram === "@saved_profile");
+  assert.equal(waitlisted.status, "waitlist");
+  assert.equal(Boolean(waitlisted.waitlistJoinedAt), true);
 });
 
 test("candidate profiles are not implicitly merged by phone or telegram", () => {
@@ -909,9 +1003,19 @@ test("recruiter can clear archive and all interview data", () => {
   assert.equal(state.candidates.some((candidate) => candidate.interviewSlotId === "slot-001"), false);
   assert.deepEqual(state.settings.developerTelegramIds, RECRUITER_TELEGRAM_IDS);
 
+  assert.throws(
+    () =>
+      applyInterviewCommand(
+        state,
+        { action: "clear_recruiter_data", payload: {} },
+        { now: "2026-08-13T14:10:00.000Z" }
+      ),
+    /технического подтверждения/
+  );
+
   ({ state } = applyInterviewCommand(
     state,
-    { action: "clear_recruiter_data", payload: {} },
+    { action: "clear_recruiter_data", payload: { confirmText: "ОЧИСТИТЬ" } },
     { now: "2026-08-13T14:10:00.000Z" }
   ));
 
