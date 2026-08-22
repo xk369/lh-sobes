@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -12,11 +13,21 @@ const dataFile = path.join(tmpDir, `app-smoke-${Date.now()}.json`);
 const candidateName = "Кандидат Полный Тест";
 const candidateTelegram = `@qa_${Date.now()}`;
 const candidatePhone = "+7 900 999-99-99";
+const candidateTelegramId = "987654321";
 
 await mkdir(tmpDir, { recursive: true });
 
 const port = await getFreePort();
 const baseUrl = `http://127.0.0.1:${port}`;
+const puzzleBotRequests = [];
+const puzzleBotApi = createHttpServer((req, res) => {
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  puzzleBotRequests.push(Object.fromEntries(url.searchParams));
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ code: 0, data: "ok" }));
+});
+await new Promise((resolve) => puzzleBotApi.listen(0, "127.0.0.1", resolve));
+const puzzleBotApiUrl = `http://127.0.0.1:${puzzleBotApi.address().port}/`;
 const server = spawn(process.execPath, ["server.js"], {
   cwd: rootDir,
   env: {
@@ -25,6 +36,10 @@ const server = spawn(process.execPath, ["server.js"], {
     PORT: String(port),
     DATA_FILE: dataFile,
     TELEGRAM_BOT_TOKEN: "",
+    PUZZLEBOT_API_TOKEN: "test-puzzlebot-token",
+    PUZZLEBOT_PRIVATE_CHAT_ID: "7961350221",
+    PUZZLEBOT_INTERVIEW_CATEGORY_ID: "983544",
+    PUZZLEBOT_API_URL: puzzleBotApiUrl,
     DISABLE_CONFIRMATION_SCHEDULER: "true"
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -50,6 +65,19 @@ try {
   });
 
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    window.__telegramConfirmMessages = [];
+    window.Telegram = {
+      WebApp: {
+        initData: "",
+        initDataUnsafe: {},
+        showConfirm(message, callback) {
+          window.__telegramConfirmMessages.push(message);
+          callback(true);
+        }
+      }
+    };
+  });
   const browserErrors = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -57,6 +85,15 @@ try {
   });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.evaluate(() => {
+    window.__telegramConfirmMessages = [];
+    window.Telegram = window.Telegram || {};
+    window.Telegram.WebApp = window.Telegram.WebApp || {};
+    window.Telegram.WebApp.showConfirm = (message, callback) => {
+      window.__telegramConfirmMessages.push(message);
+      callback(true);
+    };
+  });
   await page.locator("#candidateView").waitFor({ timeout: 10000 });
   await assertNoViewportOverflow(page, "candidate initial");
 
@@ -66,6 +103,9 @@ try {
   await page.locator("input[name='name']").fill(candidateName);
   await page.locator("input[name='telegram']").fill(candidateTelegram);
   await page.locator("input[name='phone']").fill(candidatePhone);
+  await page.locator("input[name='telegramId']").evaluate((input, value) => {
+    input.value = value;
+  }, candidateTelegramId);
   await page.locator("#candidateView .interview-date-card").first().getByRole("button", { name: "Записаться" }).click();
   await page.waitForFunction(() => document.querySelectorAll("#candidateView button[data-action='book-slot']").length === 0);
   assert.equal(await page.locator("#candidateView button[data-action='book-slot']").count(), 0, "booked candidate should not see extra dates");
@@ -131,10 +171,14 @@ try {
   const arrivedCard = arrivedGroup.locator(".recruiter-candidate-card", { hasText: candidateName }).first();
   await arrivedCard.waitFor({ timeout: 10000 });
   assert.equal(await arrivedCard.locator(".attendance-quick-actions").count(), 0, "marked candidate should not keep quick attendance buttons");
+  assert.equal(await arrivedCard.getByRole("button", { name: "Прошел", exact: true }).count(), 0, "passed button should be removed");
+  await arrivedCard.locator(".attendance-state", { hasText: "Без отказа" }).waitFor({ timeout: 10000 });
+  assert.equal(puzzleBotRequests.length, 0, "PuzzleBot should not run before the interview is completed");
   await assertNoViewportOverflow(page, "recruiter arrived");
 
   await page.getByRole("button", { name: /Отправить: 1\/5.*Регистрация/ }).click();
   await page.locator(".resource-progress-panel .pill", { hasText: "1/5 отправлено" }).waitFor({ timeout: 10000 });
+  assert.equal(puzzleBotRequests.length, 0, "manual material steps should not change PuzzleBot categories");
 
   await arrivedCard.locator("summary.candidate-name-summary").click();
   const gridColumns = await arrivedCard.locator(".candidate-info-grid").evaluate((element) =>
@@ -146,12 +190,32 @@ try {
   await arrivedCard.screenshot({ path: path.join(tmpDir, "app-arrived-card.png") });
   await page.screenshot({ path: path.join(tmpDir, "app-recruiter-mobile.png"), fullPage: true });
 
-  await arrivedCard.getByRole("button", { name: "Отказ" }).click();
+  await page.locator("[data-candidate-search]").fill("");
+  const seedPendingCard = page.locator(".recruiter-candidate-card", { hasText: "Дарья Нечаева" }).first();
+  await seedPendingCard.getByRole("button", { name: "Отказ", exact: true }).click();
   const refusedGroup = page.locator(".journal-group", { hasText: "Отказ после собеса" });
-  await refusedGroup.locator(".recruiter-candidate-card", { hasText: candidateName }).first().waitFor({ timeout: 10000 });
+  await refusedGroup.locator(".recruiter-candidate-card", { hasText: "Дарья Нечаева" }).first().waitFor({ timeout: 10000 });
   await assertNoViewportOverflow(page, "recruiter refused after interview");
 
-  await page.getByRole("button", { name: "Собес завершен", exact: true }).click();
+  await page.getByRole("button", { name: "Завершить собес", exact: true }).click();
+  await page.locator("#toast", { hasText: "Обработано пользователей: 1" }).waitFor({ timeout: 10000 });
+  const completionConfirmationMessages = await page.evaluate(() => window.__telegramConfirmMessages);
+  assert.match(completionConfirmationMessages.at(-1), /команду \/start/);
+  assert.deepEqual(puzzleBotRequests, [
+    {
+      token: "test-puzzlebot-token",
+      method: "categoryReplace",
+      user_id: candidateTelegramId,
+      tg_chat_id: "7961350221",
+      category_id: "983544"
+    },
+    {
+      token: "test-puzzlebot-token",
+      method: "sendCommand",
+      command_name: "/start",
+      tg_chat_id: candidateTelegramId
+    }
+  ]);
   await page.getByRole("button", { name: "Даты", exact: true }).click();
   await page.locator(".archive-panel > summary").click();
   await page.locator("[data-archive-search]").fill(candidateName);
@@ -167,6 +231,7 @@ try {
 } finally {
   await browser?.close().catch(() => {});
   server.kill("SIGTERM");
+  await new Promise((resolve) => puzzleBotApi.close(resolve));
 }
 
 async function injectLegacyDuplicateSlot(filePath) {

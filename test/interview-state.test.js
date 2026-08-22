@@ -10,8 +10,33 @@ const RECRUITER_TELEGRAM_IDS = [
   "829555528",
   "1223141252",
   "342064797",
-  "985283520"
+  "985283520",
+  "5067088817"
 ];
+
+test("passed interview preserves already sent resources and queues the success notification", () => {
+  const state = createSeedState("2026-08-10T09:00:00.000Z");
+  const candidate = state.candidates.find((item) => item.id === "cand-002");
+  assert.equal(candidate.attendanceStatus, "arrived");
+
+  const result = applyInterviewCommand(
+    state,
+    { action: "set_result", payload: { candidateId: candidate.id, result: "fit" } },
+    { now: "2026-08-13T12:30:00.000Z" }
+  );
+  const updated = result.state.candidates.find((item) => item.id === candidate.id);
+  const notification = result.state.notifications.find(
+    (item) => item.candidateId === candidate.id && item.type === "registration_instructions"
+  );
+
+  assert.equal(result.result.result, "fit");
+  assert.equal(updated.interviewResult, "fit");
+  assert.equal(updated.status, "registration_pending");
+  assert.equal(updated.candidateLayerStatus, "resources_sent");
+  assert.equal(updated.registrationStatus, "materials_sent");
+  assert.ok(notification);
+  assert.equal(notification.status, "pending");
+});
 
 test("new interview date automatically notifies waitlist candidates", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
@@ -669,7 +694,7 @@ test("slot template can be cleared without restoring default booking text", () =
   assert.equal(slot.directionsVideoUrl, "");
 });
 
-test("arrived candidate receives resources without interview result buttons", () => {
+test("arrived candidate without refusal receives resources one step at a time", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
 
   ({ state } = applyInterviewCommand(
@@ -707,10 +732,11 @@ test("arrived candidate receives resources without interview result buttons", ()
     { action: "mark_attendance", payload: { candidateId: candidate.id, attendance: "arrived" } },
     { now: "2026-08-13T12:05:00.000Z" }
   ));
+
   ({ state } = applyInterviewCommand(
     state,
     { action: "send_resource_step", payload: { slotId: "slot-002" } },
-    { now: "2026-08-13T12:30:00.000Z" }
+    { now: "2026-08-13T12:20:00.000Z" }
   ));
 
   const withResources = state.candidates.find((item) => item.id === candidate.id);
@@ -804,6 +830,31 @@ test("arrived candidate receives resources without interview result buttons", ()
   assert.equal(state.candidates.find((item) => item.id === candidate.id).linkClicks.length, 1);
 });
 
+test("completing a slot accepts arrived candidates without refusal and preserves sent resources", () => {
+  let state = createSeedState("2026-08-10T09:00:00.000Z");
+
+  const completed = applyInterviewCommand(
+    state,
+    { action: "complete_slot", payload: { slotId: "slot-001" } },
+    { now: "2026-08-13T14:00:00.000Z" }
+  );
+  state = completed.state;
+
+  assert.equal(completed.result.acceptedCount, 1);
+  const accepted = state.candidates.find((item) => item.id === "cand-002");
+  assert.equal(accepted.interviewResult, "fit");
+  assert.equal(accepted.status, "registration_pending");
+  assert.equal(accepted.registrationStatus, "materials_sent");
+  assert.equal(accepted.candidateLayerStatus, "resources_sent");
+  assert.equal(accepted.resourceStepsSent.length, 1);
+  assert.equal(
+    state.notifications.some((item) => item.candidateId === accepted.id && item.type === "registration_instructions"),
+    false
+  );
+  assert.equal(state.candidates.find((item) => item.id === "cand-001").interviewResult, "pending");
+  assert.equal(state.candidates.find((item) => item.id === "cand-004").interviewResult, "pending");
+});
+
 test("recruiter can mark candidate left after interview and complete slot", () => {
   let state = createSeedState("2026-08-10T09:00:00.000Z");
 
@@ -824,11 +875,14 @@ test("recruiter can mark candidate left after interview and complete slot", () =
   assert.ok(cooperationNotification);
   assert.match(cooperationNotification.message, /Спасибо, что пришли/);
 
-  ({ state } = applyInterviewCommand(
+  let completed;
+  ({ state, result: completed } = applyInterviewCommand(
     state,
     { action: "complete_slot", payload: { slotId: "slot-001" } },
     { now: "2026-08-13T14:00:00.000Z" }
   ));
+
+  assert.equal(completed.acceptedCount, 0);
 
   const slot = state.slots.find((item) => item.id === "slot-001");
   assert.equal(slot.status, "completed");

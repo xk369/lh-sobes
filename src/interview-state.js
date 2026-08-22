@@ -17,7 +17,8 @@ const DEVELOPER_TELEGRAM_IDS = [
   "829555528",
   "1223141252",
   "342064797",
-  "985283520"
+  "985283520",
+  "5067088817", //Alim
 ];
 const LOFT_23_MAP_URL = "https://yandex.ru/maps/-/CTsmF-9~";
 const RECRUITING_CONTACT = "@LOFT_RECRUITING_MSK";
@@ -527,26 +528,12 @@ export function applyInterviewCommand(input, command, options = {}) {
       }
 
       const interviewResult = ACTIVE_INTERVIEW_RESULTS.has(payload.result) ? payload.result : "other";
-      candidate.interviewResult = interviewResult;
-      candidate.resultReason = clean(payload.reason);
-      candidate.resultMarkedAt = now;
-
       if (interviewResult === "fit") {
-        candidate.status = candidate.registrationStatus === "registered" ? "ready_for_internship" : "registration_pending";
-        candidate.candidateLayerStatus =
-          candidate.registrationStatus === "registered" ? "ready_for_internship" : "interview_passed";
-        candidate.registrationStatus =
-          candidate.registrationStatus === "registered" ? "registered" : "instructions_sent";
-        candidate.registrationInstructionsSentAt = candidate.registrationInstructionsSentAt || now;
-        candidate.materialsAvailableAt = addMinutes(now, state.settings.autoMaterialDelayMinutes);
-        candidate.internshipStage =
-          candidate.registrationStatus === "registered" ? "ready_for_internship" : "candidate_ready_for_registration";
-        appendNotification(state, candidate.id, "registration_instructions", now, {
-          title: "Вы прошли собеседование",
-          message: "Отправлена инструкция по регистрации в основном боте и базе сотрудников.",
-          slotId: candidate.interviewSlotId
-        });
+        markCandidatePassed(state, candidate, actor, now, { reason: payload.reason, notify: true });
       } else {
+        candidate.interviewResult = interviewResult;
+        candidate.resultReason = clean(payload.reason);
+        candidate.resultMarkedAt = now;
         candidate.status = "rejected";
         candidate.candidateLayerStatus = "interview_rejected";
         candidate.registrationStatus = "not_started";
@@ -558,10 +545,9 @@ export function applyInterviewCommand(input, command, options = {}) {
             slotId: candidate.interviewSlotId
           });
         }
+        touch(candidate, now);
+        appendEvent(state, "interview_result_set", actor, now, { candidateId: candidate.id, result: interviewResult });
       }
-
-      touch(candidate, now);
-      appendEvent(state, "interview_result_set", actor, now, { candidateId: candidate.id, result: interviewResult });
       result = { candidateId: candidate.id, result: interviewResult };
       break;
     }
@@ -600,7 +586,7 @@ export function applyInterviewCommand(input, command, options = {}) {
 
       let sentCount = 0;
       for (const candidate of targets) {
-        if (candidate.attendanceStatus !== "arrived") continue;
+        if (candidate.attendanceStatus !== "arrived" || candidate.status === "left_after_interview") continue;
         candidate.resourceStepsSent = Array.isArray(candidate.resourceStepsSent) ? candidate.resourceStepsSent : [];
         if (hasResourceStep(candidate, resourceStep.type)) continue;
         candidate.resourceStepsSent.push({ type: resourceStep.type, sentAt: now });
@@ -651,10 +637,21 @@ export function applyInterviewCommand(input, command, options = {}) {
 
     case "complete_slot": {
       const slot = requireSlot(state, payload.slotId);
+      const acceptedCandidates = state.candidates.filter(
+        (candidate) =>
+          candidate.interviewSlotId === slot.id &&
+          candidate.attendanceStatus === "arrived" &&
+          candidate.status !== "left_after_interview"
+      );
+      for (const candidate of acceptedCandidates) {
+        if (candidate.interviewResult !== "fit") {
+          markCandidatePassed(state, candidate, actor, now, { notify: false });
+        }
+      }
       slot.status = "completed";
       slot.completedAt = now;
       appendEvent(state, "slot_completed", actor, now, { slotId: slot.id });
-      result = { slotId: slot.id };
+      result = { slotId: slot.id, acceptedCount: acceptedCandidates.length };
       break;
     }
 
@@ -1631,6 +1628,43 @@ function resourceTargets(state, slotId) {
     if (slotId && candidate.interviewSlotId !== slotId) return false;
     return candidate.attendanceStatus === "arrived" && candidate.status !== "left_after_interview";
   });
+}
+
+function markCandidatePassed(state, candidate, actor, now, options = {}) {
+  const registered = candidate.registrationStatus === "registered";
+  const resourcesAlreadySent =
+    candidate.registrationStatus === "materials_sent" ||
+    Boolean(candidate.resourcesSentAt) ||
+    (candidate.resourceStepsSent || []).length > 0;
+
+  candidate.interviewResult = "fit";
+  candidate.resultReason = clean(options.reason);
+  candidate.resultMarkedAt = now;
+  candidate.status = registered ? "ready_for_internship" : "registration_pending";
+  candidate.registrationStatus = registered ? "registered" : resourcesAlreadySent ? "materials_sent" : "instructions_sent";
+  candidate.candidateLayerStatus = registered
+    ? "ready_for_internship"
+    : resourcesAlreadySent
+      ? "resources_sent"
+      : "interview_passed";
+  candidate.registrationInstructionsSentAt = candidate.registrationInstructionsSentAt || now;
+  candidate.materialsAvailableAt = candidate.materialsAvailableAt || addMinutes(now, state.settings.autoMaterialDelayMinutes);
+  candidate.internshipStage = registered
+    ? "ready_for_internship"
+    : resourcesAlreadySent
+      ? "candidate_resources_sent"
+      : "candidate_ready_for_registration";
+
+  if (options.notify) {
+    appendNotification(state, candidate.id, "registration_instructions", now, {
+      title: "Вы прошли собеседование",
+      message: "Отправлена инструкция по регистрации в основном боте и базе сотрудников.",
+      slotId: candidate.interviewSlotId
+    });
+  }
+
+  touch(candidate, now);
+  appendEvent(state, "interview_result_set", actor, now, { candidateId: candidate.id, result: "fit" });
 }
 
 function selectResourceStep(state, resourceType, targets) {

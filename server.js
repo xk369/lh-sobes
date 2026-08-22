@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyInterviewCommand, createSeedState, deriveState } from "./src/interview-state.js";
 import { createPostgresInterviewStorage } from "./src/interview-postgres-storage.js";
+import { createPuzzleBotClient } from "./src/puzzlebot-client.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,13 @@ const INTERVIEW_STORAGE_MODE = String(process.env.INTERVIEW_STORAGE_MODE || proc
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || process.env.APP_URL || `http://${HOST}:${PORT}`;
 const TELEGRAM_ACTION_SECRET = process.env.TELEGRAM_ACTION_SECRET || TELEGRAM_BOT_TOKEN || "lh-sobes-local";
+const puzzleBotClient = createPuzzleBotClient({
+  token: process.env.PUZZLEBOT_API_TOKEN,
+  privateChatId: process.env.PUZZLEBOT_PRIVATE_CHAT_ID,
+  interviewCategoryId: process.env.PUZZLEBOT_INTERVIEW_CATEGORY_ID,
+  apiUrl: process.env.PUZZLEBOT_API_URL,
+  timeoutMs: process.env.PUZZLEBOT_API_TIMEOUT_MS
+});
 const CONFIRMATION_SEND_HOUR_MOSCOW = 21;
 const CONFIRMATION_SCHEDULER_INTERVAL_MS = Number(process.env.CONFIRMATION_SCHEDULER_INTERVAL_MS || 60_000);
 const DISABLE_CONFIRMATION_SCHEDULER = process.env.DISABLE_CONFIRMATION_SCHEDULER === "true";
@@ -112,6 +120,20 @@ const server = createServer(async (req, res) => {
         const prepared = tools.prepareStateIds
           ? await tools.prepareStateIds(next.state, next.result)
           : next;
+        if (resolvedCommand.action === "complete_slot") {
+          const acceptedCandidates = prepared.state.candidates.filter(
+            (candidate) =>
+              candidate.interviewSlotId === prepared.result.slotId &&
+              candidate.attendanceStatus === "arrived" &&
+              candidate.status !== "left_after_interview" &&
+              candidate.interviewResult === "fit"
+          );
+          for (const candidate of acceptedCandidates) {
+            await puzzleBotClient.replaceWithInterviewCategory(candidate.telegramId);
+            await puzzleBotClient.sendStartCommand(candidate.telegramId);
+          }
+          prepared.result.puzzleBotProcessedCount = acceptedCandidates.length;
+        }
         const deliveredState = await deliverPendingNotifications(prepared.state);
         return { state: deliveredState, result: prepared.result };
       });

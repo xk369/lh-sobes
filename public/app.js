@@ -218,10 +218,12 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "complete-slot") {
-      await runCommand("complete_slot", { slotId: button.dataset.slotId || ui.selectedSlotId }, button);
+      const slotId = button.dataset.slotId || ui.selectedSlotId;
+      if (!await confirmAction("Завершить собеседование? Всем пришедшим без отказа будет назначена категория «Собеседование», затем бот отправит команду /start.")) return;
+      const response = await runCommand("complete_slot", { slotId }, button);
       ui.selectedSlotId = firstActiveSlot()?.id || "";
       render();
-      showToast("Собеседование завершено");
+      showToast(`Собеседование завершено. Обработано пользователей: ${response.result.puzzleBotProcessedCount || 0}`);
       return;
     }
 
@@ -255,14 +257,14 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "clear-archive") {
-      if (!window.confirm("Очистить архив завершенных собеседований? Активные даты и текущие кандидаты останутся.")) return;
+      if (!await confirmAction("Очистить архив завершенных собеседований? Активные даты и текущие кандидаты останутся.")) return;
       const response = await runCommand("clear_archive", {}, button);
       showToast(`Архив очищен: дат ${response.result.removedSlots}, кандидатов ${response.result.removedCandidates}`);
       return;
     }
 
     if (action === "clear-recruiter-data") {
-      if (!window.confirm("Очистить все данные sobes: даты, кандидатов, ожидание, уведомления и события? Настройки площадок сохранятся.")) return;
+      if (!await confirmAction("Очистить все данные sobes: даты, кандидатов, ожидание, уведомления и события? Настройки площадок сохранятся.")) return;
       const response = await runCommand("clear_recruiter_data", {}, button);
       clearRememberedCandidate();
       ui.selectedSlotId = "";
@@ -638,6 +640,28 @@ function telegramWebAppUser() {
   return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
 }
 
+function confirmAction(message) {
+  const webApp = window.Telegram?.WebApp;
+  if (typeof webApp?.showConfirm !== "function") {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (confirmed) => {
+      if (settled) return;
+      settled = true;
+      resolve(Boolean(confirmed));
+    };
+
+    try {
+      webApp.showConfirm(message, finish);
+    } catch {
+      finish(window.confirm(message));
+    }
+  });
+}
+
 function telegramAuthHeaders() {
   const initData = window.Telegram?.WebApp?.initData || "";
   return initData ? { "X-Telegram-Init-Data": initData } : {};
@@ -925,7 +949,7 @@ function renderJournalTab() {
           data-slot-id="${escapeAttr(ui.selectedSlotId)}"
           ${!slotOpen ? "disabled aria-disabled=\"true\"" : ""}
         >
-          Собес завершен
+          Завершить собес
         </button>
       </div>
       ${renderConfirmationStatusPanel(confirmation)}
@@ -1038,8 +1062,8 @@ function renderSlotResourceControls(slot, candidates) {
     <section class="resource-progress-panel">
       <div class="resource-progress-head">
         <div>
-          <h3>Материалы пришедшим</h3>
-          <span>${candidates.length ? `Пришедших: ${candidates.length}` : "Пришедших пока нет"}</span>
+          <h3>Материалы без отказа</h3>
+          <span>${candidates.length ? `Получателей: ${candidates.length}` : "Пришедших без отказа пока нет"}</span>
         </div>
         <span class="pill accent">${progress.sent}/${progress.total} отправлено</span>
       </div>
@@ -1154,6 +1178,7 @@ function renderRecruiterCandidate(candidate, index = 0) {
       ${renderCandidateResourceExceptions(candidate)}
       ${canContinue ? `
         <div class="candidate-actions">
+          <span class="attendance-state ok">Без отказа</span>
           <button type="button" class="quiet" data-action="mark-left-after-interview" data-candidate-id="${escapeAttr(candidate.id)}">Отказ</button>
         </div>
       ` : ""}
