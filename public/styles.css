@@ -398,6 +398,14 @@ h3 {
   line-height: 1.28;
 }
 
+.candidate-slot-card .candidate-slot-time {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 950;
+  line-height: 1.12;
+  margin-top: 2px;
+}
+
 .slot-place {
   display: grid;
   gap: 4px;
@@ -1570,6 +1578,10 @@ button.is-loading:disabled {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   padding: 12px 0;
+}
+
+.resource-progress-panel.locked {
+  opacity: 0.78;
 }
 
 .resource-progress-head {

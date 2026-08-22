@@ -123,6 +123,7 @@ try {
   await page.locator("#candidateView .interview-date-card").first().getByRole("button", { name: "Записаться" }).click();
   await page.waitForFunction(() => document.querySelectorAll("#candidateView button[data-action='book-slot']").length === 0);
   assert.equal(await page.locator("#candidateView button[data-action='book-slot']").count(), 0, "booked candidate should not see extra dates");
+  assert.equal(await page.locator("#candidateView .candidate-history").count(), 0, "candidate view should not expose interview history");
   await assertNoViewportOverflow(page, "candidate booked");
 
   await page.getByRole("button", { name: "Кабинет рекрута", exact: true }).click();
@@ -195,6 +196,14 @@ try {
   assert.equal(puzzleBotRequests.length, 0, "PuzzleBot should not run before the interview is completed");
   await assertNoViewportOverflow(page, "recruiter arrived");
 
+  const resourceButton = page.locator(".resource-progress-panel button[data-action='send-resource-step']").first();
+  assert.equal(await resourceButton.isDisabled(), true, "resources should stay locked while unmarked candidates remain");
+  await page.locator(".resource-progress-panel", { hasText: "Сначала отметьте всех" }).waitFor({ timeout: 10000 });
+  await page.locator("[data-candidate-search]").fill("");
+  const seedUnmarkedCard = page.locator(".recruiter-candidate-card", { hasText: "Мухаммад Алиев" }).first();
+  await seedUnmarkedCard.waitFor({ timeout: 10000 });
+  await seedUnmarkedCard.getByRole("button", { name: "Не пришел", exact: true }).click();
+  await page.getByRole("button", { name: /Отправить: 1\/5.*Регистрация/ }).waitFor({ timeout: 10000 });
   await page.getByRole("button", { name: /Отправить: 1\/5.*Регистрация/ }).click();
   await page.locator(".resource-progress-panel .pill", { hasText: "1/5 отправлено" }).waitFor({ timeout: 10000 });
   assert.equal(puzzleBotRequests.length, 0, "manual material steps should not change PuzzleBot categories");

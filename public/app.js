@@ -690,11 +690,11 @@ function isLocalDevelopmentAccess() {
 
 function renderCandidateSlot(slot) {
   return `
-    <article class="date-card interview-date-card ${slot.availableSeats > 0 ? "selected" : "locked"}">
+    <article class="date-card interview-date-card candidate-slot-card ${slot.availableSeats > 0 ? "selected" : "locked"}">
       <div class="interview-date-main">
         <div>
           <div class="slot-title">${escapeHtml(slot.title)}</div>
-          <div class="slot-line">${escapeHtml(formatDate(slot.date))} · ${escapeHtml(slot.time)}</div>
+          <div class="slot-line candidate-slot-time">${escapeHtml(formatDate(slot.date))} · ${escapeHtml(slot.time)}</div>
         </div>
         <span class="pill ${slot.availableSeats > 0 ? "ok" : "bad"}">${slot.availableSeats} мест</span>
       </div>
@@ -796,7 +796,6 @@ function renderCandidateStatus(candidate) {
         <div class="candidate-stage-label">Этап: <b>${escapeHtml(stageLabel(candidate))}</b></div>
         ${renderStageTrack(candidate)}
       </div>
-      ${renderCandidateHistory(candidate)}
       ${canRebook ? `
         <div class="candidate-actions">
           <button type="button" class="primary" data-action="rebook-interest" data-intent="waitlist">Ждать следующую дату</button>
@@ -939,6 +938,7 @@ function renderJournalTab() {
   const arrivedAll = slotCandidates.filter(isArrivedCandidate);
   const refusedAfterInterview = candidates.filter(isPostInterviewRefusal);
   const missed = candidates.filter(isMissedCandidate);
+  const unmarkedAll = slotCandidates.filter(isUnmarkedCandidate);
 
   return `
     <section class="panel">
@@ -963,7 +963,7 @@ function renderJournalTab() {
       </div>
       ${renderConfirmationStatusPanel(confirmation)}
       ${renderJournalGroup("Не отмечены", unmarked, "wait")}
-      ${renderSlotResourceControls(slot, arrivedAll)}
+      ${renderSlotResourceControls(slot, arrivedAll, unmarkedAll.length)}
       ${renderJournalGroup("Пришли на собес", arrived, "ok")}
       ${renderJournalGroup("Отказ после собеса", refusedAfterInterview, "bad")}
       ${renderJournalGroup("Не пришли / слились", missed, "bad")}
@@ -1061,18 +1061,24 @@ function firstActiveSlot() {
   return activeSlots()[0] || null;
 }
 
-function renderSlotResourceControls(slot, candidates) {
+function renderSlotResourceControls(slot, candidates, unmarkedCount = 0) {
   if (!slot) return "";
   const progress = resourceProgressForCandidates(candidates);
   const nextStep = progress.nextStep;
-  const disabled = candidates.length === 0 || !nextStep;
+  const waitingForAttendance = unmarkedCount > 0;
+  const disabled = waitingForAttendance || candidates.length === 0 || !nextStep;
+  const helperText = waitingForAttendance
+    ? `Сначала отметьте всех в группе «Не отмечены»: осталось ${unmarkedCount}`
+    : candidates.length
+      ? `Получателей: ${candidates.length}`
+      : "Пришедших без отказа пока нет";
 
   return `
-    <section class="resource-progress-panel">
+    <section class="resource-progress-panel ${waitingForAttendance ? "locked" : ""}">
       <div class="resource-progress-head">
         <div>
           <h3>Материалы без отказа</h3>
-          <span>${candidates.length ? `Получателей: ${candidates.length}` : "Пришедших без отказа пока нет"}</span>
+          <span>${escapeHtml(helperText)}</span>
         </div>
         <span class="pill accent">${progress.sent}/${progress.total} отправлено</span>
       </div>
@@ -1084,7 +1090,7 @@ function renderSlotResourceControls(slot, candidates) {
         data-resource-type="${escapeAttr(nextStep?.type || "")}"
         ${disabled ? "disabled aria-disabled=\"true\"" : ""}
       >
-        ${nextStep ? `Отправить: ${nextStep.label}` : "Все материалы отправлены"}
+        ${waitingForAttendance ? "Отметьте всех кандидатов" : nextStep ? `Отправить: ${nextStep.label}` : "Все материалы отправлены"}
       </button>
     </section>
   `;
@@ -2645,7 +2651,7 @@ function candidateStages(candidate) {
       description: candidate.status === "waitlist"
         ? "Кандидат в общем листе ожидания и получит уведомление о новой дате."
         : candidate.interviewSlotId
-          ? "Кандидат записан на конкретную дату собеседования."
+          ? "Дополнительная информация выслана вам в чат с ботом."
           : "Кандидат заполнил контакты, но еще не записался и не вставал в очередь.",
       icon: "calendar"
     },
