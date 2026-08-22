@@ -167,6 +167,11 @@ try {
   assert.equal(await page.getByText("Материалы после записи").count(), 0, "slot form should not show booking materials block");
   assert.equal(await page.locator("#slot-form [name='bookingText'], #slot-form [name='directionsVideoUrl']").count(), 0, "slot form should not expose manual materials inputs");
   assert.equal(await page.locator(".waitlist-action").count(), 0, "waitlist should not expose manual notify button");
+  const waitlistDetails = page.locator(".waitlist-details").first();
+  assert.equal(await waitlistDetails.evaluate((node) => node.open), false, "waitlist should be collapsed by default");
+  assert.equal(await waitlistDetails.locator(".waitlist-candidate-card").first().isVisible(), false, "waitlist candidates should be hidden before expansion");
+  await waitlistDetails.locator(":scope > summary").click();
+  await waitlistDetails.locator(".waitlist-candidate-card").first().waitFor({ timeout: 10000 });
   await assertSlotDateInputFits(page);
   await assertWaitlistActionFits(page);
   await assertNoViewportOverflow(page, "recruiter dates");

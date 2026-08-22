@@ -264,12 +264,8 @@ document.addEventListener("click", async (event) => {
     }
 
     if (action === "clear-recruiter-data") {
-      if (!isLocalDevelopmentAccess()) {
-        showToast("Полный сброс отключен в рабочей версии");
-        return;
-      }
-      if (!await confirmAction("Тестовый полный сброс удалит даты, кандидатов, ожидание, уведомления и события. Продовые данные так очищать нельзя.")) return;
-      const confirmText = window.prompt("Введите ОЧИСТИТЬ для тестового полного сброса") || "";
+      if (!await confirmAction("Полный сброс удалит даты, кандидатов, ожидание, уведомления и события. Продолжить?")) return;
+      const confirmText = window.prompt("Введите ОЧИСТИТЬ для полного сброса данных") || "";
       if (confirmText.trim() !== "ОЧИСТИТЬ") {
         showToast("Полный сброс отменен");
         return;
@@ -1291,18 +1287,21 @@ function renderDatesTab() {
         </form>
       </section>
 
-      <section class="panel waitlist-panel">
-        <div class="panel-head">
+      <details class="panel waitlist-panel waitlist-details">
+        <summary class="waitlist-summary">
           <div class="panel-title-stack">
             <h2>Лист ожидания</h2>
             <span>Автоуведомление идет при создании новой даты, по очереди и по количеству мест.</span>
           </div>
-          <span class="pill accent">${waitlist.length}</span>
-        </div>
+          <span class="waitlist-summary-actions">
+            <span class="pill accent">${waitlist.length}</span>
+            <span class="summary-chevron" aria-hidden="true"></span>
+          </span>
+        </summary>
         <div class="candidate-list">
           ${waitlist.map(renderWaitlistCandidate).join("") || '<div class="empty">Список ожидания пуст</div>'}
         </div>
-      </section>
+      </details>
 
       <section class="panel span-2">
         <div class="panel-head">
@@ -1333,13 +1332,12 @@ function renderDataToolsPanel() {
   const activeCount = activeSlots().length;
   const archivedCount = archivedSlots().length;
   const candidateCount = state.candidates.length;
-  const canFullReset = isLocalDevelopmentAccess();
 
   return `
     <section class="data-tools-panel">
       <div class="data-tools-copy">
         <b>Очистка данных</b>
-        <span>${canFullReset ? "Полный сброс доступен только локально и требует ручного слова подтверждения." : "В рабочей версии доступна только очистка архива. Полный сброс отключен, чтобы случайно не снести продукт."}</span>
+        <span>Полный сброс оставлен для тестов и требует ручного слова подтверждения.</span>
       </div>
       <div class="data-tools-actions">
         <button
@@ -1350,16 +1348,14 @@ function renderDataToolsPanel() {
         >
           Очистить архив
         </button>
-        ${canFullReset ? `
-          <button
-            type="button"
-            class="danger${actionFeedbackClass("clear-recruiter-data")}"
-            data-action="clear-recruiter-data"
-            ${activeCount === 0 && archivedCount === 0 && candidateCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
-          >
-            Тестовый полный сброс
-          </button>
-        ` : '<span class="danger-lock">Полный сброс только через техподтверждение</span>'}
+        <button
+          type="button"
+          class="danger${actionFeedbackClass("clear-recruiter-data")}"
+          data-action="clear-recruiter-data"
+          ${activeCount === 0 && archivedCount === 0 && candidateCount === 0 ? "disabled aria-disabled=\"true\"" : ""}
+        >
+          Очистить все данные
+        </button>
       </div>
     </section>
   `;
@@ -1450,7 +1446,10 @@ function renderArchiveStatusChip(candidate) {
 }
 
 function renderRecruiterSlot(slot) {
-  const booked = Math.max(Number(slot.seats || 0) - Number(slot.availableSeats || 0), 0);
+  const seats = Number(slot.seats || 0);
+  const available = Number(slot.availableSeats || 0);
+  const booked = Math.max(seats - available, 0);
+  const statusLabel = slot.status === "completed" ? "Завершена" : slot.status === "open" ? "Открыта" : "Закрыта";
   return `
     <article class="date-card interview-date-card ${slot.id === ui.selectedSlotId ? "selected" : ""}">
       <div class="interview-date-main">
@@ -1458,16 +1457,24 @@ function renderRecruiterSlot(slot) {
           <div class="slot-title">${escapeHtml(slot.title)}</div>
           <div class="slot-line">${escapeHtml(formatDate(slot.date))} · ${escapeHtml(slot.time)}</div>
         </div>
-        <span class="pill ${slot.status === "open" ? "ok" : "bad"}">${escapeHtml(slot.status === "completed" ? "Завершена" : slot.status === "open" ? "Открыта" : "Закрыта")}</span>
+        <div class="slot-status-stack">
+          <span class="pill ${slot.status === "open" ? "ok" : "bad"}">${escapeHtml(statusLabel)}</span>
+          <span class="slot-created-count">создано ${seats}</span>
+        </div>
       </div>
       <div class="slot-place">
         <b>${escapeHtml(slot.venue)}</b>
         ${slot.venueAddress ? `<span>${escapeHtml(slot.venueAddress)}</span>` : ""}
       </div>
-      <div class="slot-capacity-line" aria-label="Места на дате">
-        <span>Создано мест: <b>${Number(slot.seats || 0)}</b></span>
-        <span>Свободно: <b>${Number(slot.availableSeats || 0)}</b></span>
-        <span>Записано: <b>${booked}</b></span>
+      <div class="slot-seat-grid" aria-label="Заполненность даты">
+        <div class="slot-seat-box free">
+          <span>Свободно</span>
+          <b>${available}</b>
+        </div>
+        <div class="slot-seat-box booked">
+          <span>Записано</span>
+          <b>${booked}</b>
+        </div>
       </div>
       <div class="candidate-actions">
         <button
